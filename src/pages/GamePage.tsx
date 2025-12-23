@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   formatOrientation,
@@ -6,35 +6,22 @@ import {
   parseOrientationParam,
   parseTimeControlParam
 } from '../domain/localSetup';
-import type { Color, Move, Square } from '../domain/chessTypes';
-import { oppositeColor } from '../domain/chessTypes';
+import type { Move, Square } from '../domain/chessTypes';
 import { createInitialGameState } from '../domain/gameState';
 import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
 import { generatePseudoLegalMoves } from '../domain/movegen';
 import { gameReducer } from '../domain/reducer';
-import { getGameStatus } from '../domain/gameStatus';
-import { findKing, isInCheck } from '../domain/attack';
 import { ChessBoard } from '../ui/ChessBoard';
 import { PromotionChooser } from '../ui/PromotionChooser';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { ResultDialog } from '../ui/ResultDialog';
+import { useDerivedGameView } from './game/useDerivedGameView';
+import { useLocalClocks, formatClockMs } from './game/useLocalClocks';
+import { useToastNotice } from './game/useToastNotice';
 
 function makeLocalGameId(): string {
   return `local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
-
-type ClockState = {
-  wMs: number;
-  bMs: number;
-};
-
-function formatClockMs(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 export function GamePage() {
@@ -60,140 +47,21 @@ export function GamePage() {
   >(null);
 
   // Step 9/8 alignment: brief feedback for illegal move attempts.
-  const [noticeText, setNoticeText] = useState<string | null>(null);
-  const noticeTimerRef = useRef<number | null>(null);
-
-  function showNotice(text: string) {
-    setNoticeText(text);
-    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = window.setTimeout(() => setNoticeText(null), 1500);
-  }
-
-  useEffect(() => {
-    return () => {
-      if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
-    };
-  }, []);
+  const { noticeText, showNotice, clearNotice } = useToastNotice(1500);
 
   const legalMovesFromSelection = useMemo(() => {
     if (selectedSquare === null) return [];
     return generateLegalMoves(state, selectedSquare);
   }, [state, selectedSquare]);
 
-  const status = useMemo(() => getGameStatus(state), [state]);
-  const inCheck = status.kind === 'inProgress' ? isInCheck(state, state.sideToMove) : false;
-  const isGameOver = status.kind !== 'inProgress';
+  const { status, isGameOver, inCheck, lastMove, checkSquares } = useDerivedGameView(state);
 
-  const lastMove = useMemo(() => {
-    if (state.history.length === 0) return null;
-    const m = state.history[state.history.length - 1];
-    return { from: m.from, to: m.to };
-  }, [state.history]);
-
-  const checkSquares = useMemo(() => {
-    if (status.kind !== 'inProgress') return [] as Square[];
-    if (!inCheck) return [] as Square[];
-    const k = findKing(state, state.sideToMove);
-    return k === null ? ([] as Square[]) : [k];
-  }, [status.kind, inCheck, state, state.sideToMove]);
-
-  const stateRef = useRef(state);
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-
-  const hasClock = timeControl?.kind === 'fischer';
-  const clockInitialMs = hasClock ? timeControl.initialSeconds * 1000 : 0;
-  const clockIncrementMs = hasClock ? timeControl.incrementSeconds * 1000 : 0;
-
-  const [clock, setClock] = useState<ClockState | null>(() => {
-    if (!hasClock) return null;
-    return { wMs: clockInitialMs, bMs: clockInitialMs };
-  });
-
-  const lastTickRef = useRef<number | null>(null);
-  const prevMoveCountRef = useRef<number>(0);
-
-  // Reset clock when time control changes (or when entering the page).
-  useEffect(() => {
-    if (!hasClock) {
-      setClock(null);
-      return;
-    }
-    setClock({ wMs: clockInitialMs, bMs: clockInitialMs });
-    lastTickRef.current = Date.now();
-    prevMoveCountRef.current = 0;
-  }, [hasClock, clockInitialMs]);
-
-  // Apply Fischer increment to the player who just moved.
-  useEffect(() => {
-    if (!hasClock) return;
-
-    const prevCount = prevMoveCountRef.current;
-    const nextCount = state.history.length;
-
-    if (nextCount > prevCount) {
-      const mover: Color = oppositeColor(state.sideToMove); // because sideToMove already switched
-      if (clockIncrementMs > 0) {
-        setClock((c) => {
-          if (!c) return c;
-          return mover === 'w' ? { ...c, wMs: c.wMs + clockIncrementMs } : { ...c, bMs: c.bMs + clockIncrementMs };
-        });
-      }
-      lastTickRef.current = Date.now();
-    }
-
-    // Restart/new game: history is cleared.
-    if (nextCount === 0 && prevCount > 0) {
-      setClock({ wMs: clockInitialMs, bMs: clockInitialMs });
-      lastTickRef.current = Date.now();
-    }
-
-    prevMoveCountRef.current = nextCount;
-  }, [hasClock, clockIncrementMs, clockInitialMs, state.history.length, state.sideToMove]);
-
-  // Tick down the active side.
-  useEffect(() => {
-    if (!hasClock) return;
-    if (isGameOver) return;
-
-    // If the clock starts at 0, end immediately.
-    if (clockInitialMs <= 0) {
-      dispatch({ type: 'timeout', loser: stateRef.current.sideToMove });
-      return;
-    }
-
-    lastTickRef.current = Date.now();
-
-    const id = window.setInterval(() => {
-      const now = Date.now();
-      const last = lastTickRef.current ?? now;
-      const delta = Math.max(0, now - last);
-      lastTickRef.current = now;
-
-      const active = stateRef.current.sideToMove;
-      let didTimeout = false;
-
-      setClock((c) => {
-        if (!c) return c;
-        const next = { ...c };
-        if (active === 'w') {
-          next.wMs = Math.max(0, next.wMs - delta);
-          if (next.wMs === 0) didTimeout = true;
-        } else {
-          next.bMs = Math.max(0, next.bMs - delta);
-          if (next.bMs === 0) didTimeout = true;
-        }
-        return next;
-      });
-
-      if (didTimeout) {
-        dispatch({ type: 'timeout', loser: active });
-      }
-    }, 200);
-
-    return () => window.clearInterval(id);
-  }, [hasClock, isGameOver, clockInitialMs, dispatch]);
+  const { hasClock, clock } = useLocalClocks(
+    state,
+    timeControl ?? { kind: 'none' },
+    isGameOver,
+    dispatch
+  );
 
   // Close in-progress input dialogs if the game ends (mate/draw/resign).
   useEffect(() => {
@@ -201,8 +69,8 @@ export function GamePage() {
     setConfirm(null);
     setPendingPromotion(null);
     setSelectedSquare(null);
-    setNoticeText(null);
-  }, [isGameOver]);
+    clearNotice();
+  }, [isGameOver, clearNotice]);
 
   if (!timeControl || !orientation) {
     return (

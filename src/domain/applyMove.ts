@@ -102,23 +102,31 @@ function isPromotionMove(moving: Piece, to: Square): boolean {
   return moving.color === 'w' ? r === 7 : r === 0;
 }
 
-export function applyMove(state: GameState, inputMove: Move): GameState {
-  // If the game has been ended manually (resign/draw), ignore further moves.
-  if (state.forcedStatus) return state;
+type ApplyMode = 'play' | 'validation';
 
+type BoardTransition = {
+  board: Board;
+  move: Move;
+  moving: Piece;
+  captured: Piece | null;
+};
+
+/**
+ * Shared core used both for "real" move application (Step 6) and for legality validation (Step 5).
+ *
+ * Returns null for invalid inputs.
+ */
+function applyMoveToBoard(state: GameState, inputMove: Move, mode: ApplyMode): BoardTransition | null {
   const moving = getPiece(state.board, inputMove.from);
-  if (!moving) return state;
-  if (moving.color !== state.sideToMove) return state;
+  if (!moving) return null;
 
   // Normalize flags so UI can pass simple moves later.
-  let move = normalizeCastleFlags(state, inputMove, moving);
+  let move = inputMove;
+  move = normalizeCastleFlags(state, move, moving);
   move = normalizeEnPassantFlags(state, move, moving, state.board);
 
-  let board: Board = state.board;
+  let board: Board = state.board.slice();
   let captured: Piece | null = getPiece(board, move.to);
-
-  // Start from a cloned board (immutability)
-  board = board.slice();
 
   // Clear from-square
   board = setPiece(board, move.from, null);
@@ -129,6 +137,7 @@ export function applyMove(state: GameState, inputMove: Move): GameState {
     const homeRank = isWhite ? 0 : 7;
 
     board = setPiece(board, move.to, moving);
+    captured = null;
 
     if (move.castleSide === 'k') {
       const rookFrom = makeSquare(7, homeRank)!;
@@ -144,23 +153,7 @@ export function applyMove(state: GameState, inputMove: Move): GameState {
       if (rook) board = setPiece(board, rookTo, rook);
     }
 
-    const nextCastling = clearCastlingForColor(state.castling, moving.color);
-    const nextHistoryMove: Move = { ...move, captured: null };
-
-    const nextSide = oppositeColor(state.sideToMove);
-    const nextFullmove = state.sideToMove === 'b' ? state.fullmoveNumber + 1 : state.fullmoveNumber;
-    const nextHalfmove = state.halfmoveClock + 1;
-
-    return {
-      ...state,
-      board,
-      sideToMove: nextSide,
-      castling: nextCastling,
-      enPassantTarget: null,
-      halfmoveClock: nextHalfmove,
-      fullmoveNumber: nextFullmove,
-      history: [...state.history, nextHistoryMove]
-    };
+    return { board, move: { ...move, captured: null }, moving, captured };
   }
 
   // En passant capture: captured pawn sits behind the target square.
@@ -179,12 +172,60 @@ export function applyMove(state: GameState, inputMove: Move): GameState {
   if (isPromotionMove(moving, move.to)) {
     // Per v1 plan: promotion must be explicitly provided when required.
     // (UI ensures this via the PromotionChooser; this is a defensive guard.)
-    const promotion = move.promotion;
-    if (!promotion) return state;
+    const promotion = move.promotion ?? (mode === 'validation' ? 'q' : undefined);
+    if (!promotion) return null;
     board = setPiece(board, move.to, { color: moving.color, type: promotion });
     move = { ...move, promotion };
   } else {
     board = setPiece(board, move.to, moving);
+  }
+
+  return { board, move, moving, captured };
+}
+
+/**
+ * Apply a move for king-safety validation (Step 5).
+ *
+ * This updates only the board and side-to-move, leaving counters/rights/history as-is.
+ */
+export function applyMoveForValidation(state: GameState, move: Move): GameState {
+  const t = applyMoveToBoard(state, move, 'validation');
+  if (!t) return state;
+  return {
+    ...state,
+    board: t.board,
+    sideToMove: oppositeColor(state.sideToMove)
+  };
+}
+
+export function applyMove(state: GameState, inputMove: Move): GameState {
+  // If the game has been ended manually (resign/draw), ignore further moves.
+  if (state.forcedStatus) return state;
+
+  const t = applyMoveToBoard(state, inputMove, 'play');
+  if (!t) return state;
+  const { board, moving, captured } = t;
+  const move = t.move;
+
+  if (moving.color !== state.sideToMove) return state;
+
+  // Castling special-case bookkeeping (board transition is already done above)
+  if (move.isCastle && moving.type === 'k') {
+    const nextCastling = clearCastlingForColor(state.castling, moving.color);
+    const nextSide = oppositeColor(state.sideToMove);
+    const nextFullmove = state.sideToMove === 'b' ? state.fullmoveNumber + 1 : state.fullmoveNumber;
+    const nextHalfmove = state.halfmoveClock + 1;
+
+    return {
+      ...state,
+      board,
+      sideToMove: nextSide,
+      castling: nextCastling,
+      enPassantTarget: null,
+      halfmoveClock: nextHalfmove,
+      fullmoveNumber: nextFullmove,
+      history: [...state.history, { ...move, captured: null }]
+    };
   }
 
   // Castling rights updates

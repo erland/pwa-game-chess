@@ -1,94 +1,9 @@
-import type { Board, Color, GameState, Move, Piece, Square } from './chessTypes';
+import type { Color, GameState, Move, Square } from './chessTypes';
 import { oppositeColor } from './chessTypes';
-import { getPiece as getPieceFromBoard, setPiece } from './board';
-import { fileOf, makeSquare, rankOf } from './square';
 import { isInCheck, isSquareAttacked } from './attack';
 import { generatePseudoLegalMoves } from './movegen';
-
-function cloneCastling(c: GameState['castling']): GameState['castling'] {
-  return { wK: c.wK, wQ: c.wQ, bK: c.bK, bQ: c.bQ };
-}
-
-function applyMoveForValidation(state: GameState, move: Move): GameState {
-  // Only mutate via new arrays/objects (pure)
-  let board: Board = state.board.slice();
-  const moving = getPieceFromBoard(board, move.from);
-  if (!moving) return state;
-
-  // Capture info (optional)
-  let captured: Piece | null = getPieceFromBoard(board, move.to);
-
-  // Clear from-square
-  board = setPiece(board, move.from, null);
-
-  // Handle castling (king move + rook move)
-  if (move.isCastle) {
-    const isWhite = moving.color === 'w';
-    const homeRank = isWhite ? 0 : 7;
-
-    // Place king on destination
-    board = setPiece(board, move.to, moving);
-
-    // Move rook
-    if (move.castleSide === 'k') {
-      const rookFrom = makeSquare(7, homeRank)!;
-      const rookTo = makeSquare(5, homeRank)!;
-      const rook = getPieceFromBoard(board, rookFrom);
-      board = setPiece(board, rookFrom, null);
-      if (rook) board = setPiece(board, rookTo, rook);
-    } else if (move.castleSide === 'q') {
-      const rookFrom = makeSquare(0, homeRank)!;
-      const rookTo = makeSquare(3, homeRank)!;
-      const rook = getPieceFromBoard(board, rookFrom);
-      board = setPiece(board, rookFrom, null);
-      if (rook) board = setPiece(board, rookTo, rook);
-    }
-
-    return {
-      ...state,
-      board,
-      // Side to move flips so later steps can reuse this helper.
-      sideToMove: oppositeColor(state.sideToMove),
-      // Leave castling/enPassant as-is for Step 5 legality filtering;
-      // Step 6 will properly maintain them.
-      castling: cloneCastling(state.castling),
-      enPassantTarget: state.enPassantTarget,
-      halfmoveClock: state.halfmoveClock,
-      fullmoveNumber: state.fullmoveNumber,
-      history: state.history
-    };
-  }
-
-  // En passant capture: captured pawn is not on `to`, but behind it.
-  if (move.isEnPassant && moving.type === 'p') {
-    const toF = fileOf(move.to);
-    const toR = rankOf(move.to);
-    const capR = moving.color === 'w' ? toR - 1 : toR + 1;
-    const capSq = makeSquare(toF, capR);
-    if (capSq !== null) {
-      captured = getPieceFromBoard(board, capSq);
-      board = setPiece(board, capSq, null);
-    }
-  }
-
-  // Promotion
-  if (moving.type === 'p' && typeof move.promotion !== 'undefined') {
-    board = setPiece(board, move.to, { color: moving.color, type: move.promotion });
-  } else {
-    board = setPiece(board, move.to, moving);
-  }
-
-  return {
-    ...state,
-    board,
-    sideToMove: oppositeColor(state.sideToMove),
-    castling: cloneCastling(state.castling),
-    enPassantTarget: state.enPassantTarget,
-    halfmoveClock: state.halfmoveClock,
-    fullmoveNumber: state.fullmoveNumber,
-    history: state.history
-  };
-}
+import { applyMoveForValidation } from './applyMove';
+import { fileOf, makeSquare, rankOf } from './square';
 
 function castlePathSquares(from: Square, to: Square): Square[] {
   // For king-side: e1->g1 passes through f1; include destination.
