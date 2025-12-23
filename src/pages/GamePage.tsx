@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   formatOrientation,
@@ -6,7 +6,8 @@ import {
   parseOrientationParam,
   parseTimeControlParam
 } from '../domain/localSetup';
-import type { Move, Square } from '../domain/chessTypes';
+import type { Color, Move, Square } from '../domain/chessTypes';
+import { oppositeColor } from '../domain/chessTypes';
 import { createInitialGameState } from '../domain/gameState';
 import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
@@ -20,6 +21,19 @@ import { ResultDialog } from '../ui/ResultDialog';
 
 function makeLocalGameId(): string {
   return `local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+
+type ClockState = {
+  wMs: number;
+  bMs: number;
+};
+
+function formatClockMs(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 export function GamePage() {
@@ -52,6 +66,104 @@ export function GamePage() {
   const status = useMemo(() => getGameStatus(state), [state]);
   const inCheck = status.kind === 'inProgress' ? isInCheck(state, state.sideToMove) : false;
   const isGameOver = status.kind !== 'inProgress';
+
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const hasClock = timeControl?.kind === 'fischer';
+  const clockInitialMs = hasClock ? timeControl.initialSeconds * 1000 : 0;
+  const clockIncrementMs = hasClock ? timeControl.incrementSeconds * 1000 : 0;
+
+  const [clock, setClock] = useState<ClockState | null>(() => {
+    if (!hasClock) return null;
+    return { wMs: clockInitialMs, bMs: clockInitialMs };
+  });
+
+  const lastTickRef = useRef<number | null>(null);
+  const prevMoveCountRef = useRef<number>(0);
+
+  // Reset clock when time control changes (or when entering the page).
+  useEffect(() => {
+    if (!hasClock) {
+      setClock(null);
+      return;
+    }
+    setClock({ wMs: clockInitialMs, bMs: clockInitialMs });
+    lastTickRef.current = Date.now();
+    prevMoveCountRef.current = 0;
+  }, [hasClock, clockInitialMs]);
+
+  // Apply Fischer increment to the player who just moved.
+  useEffect(() => {
+    if (!hasClock) return;
+
+    const prevCount = prevMoveCountRef.current;
+    const nextCount = state.history.length;
+
+    if (nextCount > prevCount) {
+      const mover: Color = oppositeColor(state.sideToMove); // because sideToMove already switched
+      if (clockIncrementMs > 0) {
+        setClock((c) => {
+          if (!c) return c;
+          return mover === 'w' ? { ...c, wMs: c.wMs + clockIncrementMs } : { ...c, bMs: c.bMs + clockIncrementMs };
+        });
+      }
+      lastTickRef.current = Date.now();
+    }
+
+    // Restart/new game: history is cleared.
+    if (nextCount === 0 && prevCount > 0) {
+      setClock({ wMs: clockInitialMs, bMs: clockInitialMs });
+      lastTickRef.current = Date.now();
+    }
+
+    prevMoveCountRef.current = nextCount;
+  }, [hasClock, clockIncrementMs, clockInitialMs, state.history.length, state.sideToMove]);
+
+  // Tick down the active side.
+  useEffect(() => {
+    if (!hasClock) return;
+    if (isGameOver) return;
+
+    // If the clock starts at 0, end immediately.
+    if (clockInitialMs <= 0) {
+      dispatch({ type: 'timeout', loser: stateRef.current.sideToMove });
+      return;
+    }
+
+    lastTickRef.current = Date.now();
+
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      const last = lastTickRef.current ?? now;
+      const delta = Math.max(0, now - last);
+      lastTickRef.current = now;
+
+      const active = stateRef.current.sideToMove;
+      let didTimeout = false;
+
+      setClock((c) => {
+        if (!c) return c;
+        const next = { ...c };
+        if (active === 'w') {
+          next.wMs = Math.max(0, next.wMs - delta);
+          if (next.wMs === 0) didTimeout = true;
+        } else {
+          next.bMs = Math.max(0, next.bMs - delta);
+          if (next.bMs === 0) didTimeout = true;
+        }
+        return next;
+      });
+
+      if (didTimeout) {
+        dispatch({ type: 'timeout', loser: active });
+      }
+    }, 200);
+
+    return () => window.clearInterval(id);
+  }, [hasClock, isGameOver, clockInitialMs, dispatch]);
 
   // Close in-progress input dialogs if the game ends (mate/draw/resign).
   useEffect(() => {
@@ -159,6 +271,29 @@ export function GamePage() {
         </dl>
 
         <div className="gameMeta">
+          {hasClock && clock && (
+            <>
+              <div>
+                <span className="muted">White clock</span>
+                <div
+                  className={`metaValue clockValue ${state.sideToMove === 'w' ? 'clockActive' : ''}`}
+                  aria-label="White clock"
+                >
+                  {formatClockMs(clock.wMs)}
+                </div>
+              </div>
+              <div>
+                <span className="muted">Black clock</span>
+                <div
+                  className={`metaValue clockValue ${state.sideToMove === 'b' ? 'clockActive' : ''}`}
+                  aria-label="Black clock"
+                >
+                  {formatClockMs(clock.bMs)}
+                </div>
+              </div>
+            </>
+          )}
+
           <div>
             <span className="muted">Side to move</span>
             <div className="metaValue">{state.sideToMove === 'w' ? 'White' : 'Black'}</div>
@@ -171,6 +306,7 @@ export function GamePage() {
               {status.kind === 'stalemate' && 'Draw — stalemate'}
               {status.kind === 'drawInsufficientMaterial' && 'Draw — insufficient material'}
               {status.kind === 'drawAgreement' && 'Draw — agreed'}
+              {status.kind === 'timeout' && `Time out — ${status.winner === 'w' ? 'White' : 'Black'} wins`}
               {status.kind === 'resign' &&
                 `${status.loser === 'w' ? 'White' : 'Black'} resigned — ${
                   status.winner === 'w' ? 'White' : 'Black'

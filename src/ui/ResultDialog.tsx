@@ -17,6 +17,8 @@ function formatResultTitle(status: Exclude<GameStatus, { kind: 'inProgress' }>):
       return 'Draw — insufficient material';
     case 'drawAgreement':
       return 'Draw — agreed';
+    case 'timeout':
+      return `Time out — ${status.winner === 'w' ? 'White' : 'Black'} wins`;
     case 'resign':
       return `${status.loser === 'w' ? 'White' : 'Black'} resigned — ${status.winner === 'w' ? 'White' : 'Black'} wins`;
   }

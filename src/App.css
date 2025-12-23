@@ -213,13 +213,22 @@ h1 {
 
 @media (min-width: 600px) {
   .gameMeta {
-    grid-template-columns: 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr 1fr 1fr auto;
   }
 }
 
 .metaValue {
   font-weight: 700;
   margin-top: 4px;
+}
+
+
+.clockValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.clockActive {
+  text-decoration: underline;
 }
 
 .metaActions {

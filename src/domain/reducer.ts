@@ -16,7 +16,8 @@ export type GameAction =
   | { type: 'newGame' }
   | { type: 'applyMove'; move: Move }
   | { type: 'resign' }
-  | { type: 'agreeDraw' };
+  | { type: 'agreeDraw' }
+  | { type: 'timeout'; loser: GameState['sideToMove'] };
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -33,6 +34,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'agreeDraw':
       if (state.forcedStatus) return state;
       return { ...state, forcedStatus: { kind: 'drawAgreement' } };
+    case 'timeout': {
+      if (state.forcedStatus) return state;
+      const loser = action.loser;
+      const winner = oppositeColor(loser);
+      return { ...state, forcedStatus: { kind: 'timeout', winner, loser } };
+    }
     default:
       return state;
   }

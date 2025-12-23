@@ -80,7 +80,8 @@ export type GameStatus =
   | { kind: 'stalemate' }
   | { kind: 'drawInsufficientMaterial' }
   | { kind: 'drawAgreement' }
-  | { kind: 'resign'; winner: Color; loser: Color };
+  | { kind: 'resign'; winner: Color; loser: Color }
+  | { kind: 'timeout'; winner: Color; loser: Color };
 
 export type Board = Array<Piece | null>;
 
