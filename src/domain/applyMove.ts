@@ -177,7 +177,10 @@ export function applyMove(state: GameState, inputMove: Move): GameState {
 
   // Place piece (promotion or normal)
   if (isPromotionMove(moving, move.to)) {
-    const promotion = move.promotion ?? 'q';
+    // Per v1 plan: promotion must be explicitly provided when required.
+    // (UI ensures this via the PromotionChooser; this is a defensive guard.)
+    const promotion = move.promotion;
+    if (!promotion) return state;
     board = setPiece(board, move.to, { color: moving.color, type: promotion });
     move = { ...move, promotion };
   } else {
