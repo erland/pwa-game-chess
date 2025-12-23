@@ -1,33 +1,22 @@
 import './App.css';
+import { HashRouter, Route, Routes } from 'react-router-dom';
+import { HomePage } from './pages/HomePage';
+import { LocalSetupPage } from './pages/LocalSetupPage';
+import { GamePage } from './pages/GamePage';
+import { NotFoundPage } from './pages/NotFoundPage';
+import { AppShell } from './ui/AppShell';
 
 export default function App() {
   return (
-    <div className="app">
-      <header className="appHeader">
-        <div className="appBadge">♞</div>
-        <div>
-          <h1>PWA Chess</h1>
-          <p className="muted">
-            Scaffold ready. Next step: App shell + navigation for Local mode.
-          </p>
-        </div>
-      </header>
-
-      <main className="card">
-        <h2>Step 1 checklist</h2>
-        <ul>
-          <li>Vite + React + TypeScript scaffold ✅</li>
-          <li>Jest test runner ✅</li>
-          <li>PWA plugin configured ✅</li>
-          <li>GitHub Pages workflow ✅</li>
-        </ul>
-      </main>
-
-      <footer className="footer">
-        <span className="muted">
-          Repository base path: <code>/pwa-game-chess/</code>
-        </span>
-      </footer>
-    </div>
+    <HashRouter  future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/local/setup" element={<LocalSetupPage />} />
+          <Route path="/local/game" element={<GamePage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
+    </HashRouter>
   );
 }
