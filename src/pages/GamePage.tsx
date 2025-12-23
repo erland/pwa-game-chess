@@ -6,7 +6,7 @@ import {
   parseOrientationParam,
   parseTimeControlParam
 } from '../domain/localSetup';
-import type { Square } from '../domain/chessTypes';
+import type { Move, Square } from '../domain/chessTypes';
 import { createInitialGameState } from '../domain/gameState';
 import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
@@ -14,6 +14,7 @@ import { gameReducer } from '../domain/reducer';
 import { getGameStatus } from '../domain/gameStatus';
 import { isInCheck } from '../domain/attack';
 import { ChessBoard } from '../ui/ChessBoard';
+import { PromotionChooser } from '../ui/PromotionChooser';
 
 function makeLocalGameId(): string {
   return `local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -29,6 +30,11 @@ export function GamePage() {
 
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createInitialGameState());
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{
+    from: Square;
+    to: Square;
+    options: Move[];
+  } | null>(null);
 
   const legalMovesFromSelection = useMemo(() => {
     if (selectedSquare === null) return [];
@@ -60,8 +66,24 @@ export function GamePage() {
     );
   }
 
+  function tryApplyCandidates(from: Square, to: Square, candidates: Move[]) {
+    if (candidates.length === 0) return;
+
+    const promo = candidates.filter((m) => Boolean(m.promotion));
+    if (promo.length > 0) {
+      // Ask the user which piece to promote to.
+      setPendingPromotion({ from, to, options: promo });
+      return;
+    }
+
+    // Non-promotion: there should be exactly one legal candidate.
+    dispatch({ type: 'applyMove', move: candidates[0] });
+    setSelectedSquare(null);
+  }
+
   function handleSquareClick(square: Square) {
     if (isGameOver) return;
+    if (pendingPromotion) return;
 
     const piece = getPiece(state.board, square);
 
@@ -89,11 +111,14 @@ export function GamePage() {
     const candidates = legalMovesFromSelection.filter((m) => m.to === square);
     if (candidates.length === 0) return;
 
-    // If there are multiple promotion candidates, default to queen.
-    const queenPromo = candidates.find((m) => m.promotion === 'q');
-    const chosen = queenPromo ?? candidates[0];
-    dispatch({ type: 'applyMove', move: chosen });
-    setSelectedSquare(null);
+    tryApplyCandidates(selectedSquare, square, candidates);
+  }
+
+  function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
+    if (isGameOver) return;
+    if (pendingPromotion) return;
+    // Drag-drop is allowed even if selection is out of sync.
+    tryApplyCandidates(from, to, candidates);
   }
 
   return (
@@ -152,9 +177,26 @@ export function GamePage() {
           selectedSquare={selectedSquare}
           legalMovesFromSelection={legalMovesFromSelection}
           onSquareClick={handleSquareClick}
-          disabled={isGameOver}
+          onMoveAttempt={handleMoveAttempt}
+          disabled={isGameOver || Boolean(pendingPromotion)}
         />
-        <p className="muted">Click a piece to see legal moves. Click a highlighted square to move.</p>
+        <p className="muted">Tap to move, or drag a piece to a highlighted square.</p>
+
+        {pendingPromotion && (
+          <PromotionChooser
+            color={state.sideToMove}
+            options={pendingPromotion.options}
+            onChoose={(move) => {
+              dispatch({ type: 'applyMove', move });
+              setPendingPromotion(null);
+              setSelectedSquare(null);
+            }}
+            onCancel={() => {
+              setPendingPromotion(null);
+              // Keep selection so the user can try again.
+            }}
+          />
+        )}
 
         <div className="actions">
           <Link to="/local/setup" className="btn btn-primary">

@@ -231,6 +231,7 @@ h1 {
   display: grid;
   gap: 8px;
   width: min(560px, 100%);
+  position: relative;
 }
 
 .boardRow {
@@ -325,6 +326,78 @@ h1 {
   height: 18%;
   border-radius: 999px;
   background: rgba(34, 197, 94, 0.55);
+}
+
+.dragLayer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.dragPiece {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: clamp(22px, 5vw, 44px);
+  line-height: 1;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.55));
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.modal {
+  width: min(440px, 100%);
+  background: rgba(17, 24, 39, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+}
+
+.promoGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.promoBtn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(229, 231, 235, 0.98);
+  border-radius: 14px;
+  padding: 10px;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+
+.promoBtn:hover {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.promoBtn:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.7);
+  outline-offset: 2px;
+}
+
+.promoPiece {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.promoLabel {
+  font-size: 12px;
+  color: rgba(229, 231, 235, 0.80);
 }
 
 .footer {

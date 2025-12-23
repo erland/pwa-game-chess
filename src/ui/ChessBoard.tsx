@@ -1,6 +1,9 @@
+import { useRef, useState } from 'react';
+
 import type { Orientation } from '../domain/localSetup';
 import type { GameState, Move, Piece, Square } from '../domain/chessTypes';
 import { getPiece } from '../domain/board';
+import { generateLegalMoves } from '../domain/legalMoves';
 import { FILES, RANKS, fileOf, makeSquare, rankOf, toAlgebraic } from '../domain/square';
 
 export type ChessBoardProps = {
@@ -9,6 +12,7 @@ export type ChessBoardProps = {
   selectedSquare: Square | null;
   legalMovesFromSelection: Move[];
   onSquareClick: (square: Square) => void;
+  onMoveAttempt: (from: Square, to: Square, candidates: Move[]) => void;
   disabled?: boolean;
 };
 
@@ -84,13 +88,31 @@ export function ChessBoard({
   selectedSquare,
   legalMovesFromSelection,
   onSquareClick,
+  onMoveAttempt,
   disabled
 }: ChessBoardProps) {
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const suppressClickRef = useRef(false);
+  const [dragging, setDragging] = useState<{
+    origin: Square;
+    piece: Piece;
+    startX: number;
+    startY: number;
+    clientX: number;
+    clientY: number;
+    isDragging: boolean;
+    // Cache legal moves for the origin to make drag robust even if selection state updates a bit later.
+    legalMoves: Move[];
+  } | null>(null);
+
+  const effectiveSelectedSquare = dragging ? dragging.origin : selectedSquare;
+  const effectiveLegalMoves = dragging ? dragging.legalMoves : legalMovesFromSelection;
+
   const displaySquares = squaresForOrientation(orientation);
 
   const legalDestinations = new Set<Square>();
   const captureDestinations = new Set<Square>();
-  for (const m of legalMovesFromSelection) {
+  for (const m of effectiveLegalMoves) {
     legalDestinations.add(m.to);
     const targetPiece = getPiece(state.board, m.to);
     const isCapture = Boolean(targetPiece) || Boolean(m.isEnPassant);
@@ -120,10 +142,17 @@ export function ChessBoard({
           ))}
         </div>
 
-        <div className="board" role="grid" aria-label="Chess board">
+        <div
+          ref={boardRef}
+          className="board"
+          role="grid"
+          aria-label="Chess board"
+          // Prevent touch scrolling from interfering with drag.
+          style={{ touchAction: 'none' }}
+        >
           {displaySquares.map((sq) => {
             const piece = getPiece(state.board, sq);
-            const isSelected = selectedSquare === sq;
+            const isSelected = effectiveSelectedSquare === sq;
             const isLegal = legalDestinations.has(sq);
             const isCapture = captureDestinations.has(sq);
             const isDark = isDarkSquare(sq);
@@ -138,17 +167,121 @@ export function ChessBoard({
               .filter(Boolean)
               .join(' ');
 
+            const isDraggingOrigin = Boolean(dragging?.isDragging) && dragging?.origin === sq;
+
             return (
               <button
                 key={sq}
                 type="button"
                 className={className}
                 aria-label={squareAriaLabel(state, sq)}
-                onClick={() => onSquareClick(sq)}
+                onClick={() => {
+                  // If a drag occurred, the browser will still fire a click on pointer-up.
+                  // Suppress it so we don't toggle selection or re-attempt moves.
+                  if (suppressClickRef.current) {
+                    suppressClickRef.current = false;
+                    return;
+                  }
+                  onSquareClick(sq);
+                }}
+                onPointerDown={(e) => {
+                  if (disabled) return;
+                  if (!piece) return;
+                  if (piece.color !== state.sideToMove) return;
+
+                  // Start tracking drag. We'll consider it a drag once pointer moves past threshold.
+                  // Cache legal moves for origin to make drop resolution deterministic.
+                  suppressClickRef.current = false;
+
+                  setDragging({
+                    origin: sq,
+                    piece,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                    isDragging: false,
+                    // Don't call onSquareClick here: userEvent.click triggers pointerdown + click.
+                    // Calling onSquareClick twice can toggle selection off (and tests/users won't see highlights).
+                    // Instead, compute legal moves directly for drag UI.
+                    legalMoves: generateLegalMoves(state, sq)
+                  });
+
+                  // Keep receiving move events even if pointer leaves the square.
+                  (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  if (!dragging) return;
+                  // Only update if we're dragging the same origin piece.
+                  if (dragging.origin !== sq) return;
+                  const dx = e.clientX - dragging.startX;
+                  const dy = e.clientY - dragging.startY;
+                  const dist = Math.hypot(dx, dy);
+                  const nextIsDragging = dragging.isDragging || dist >= 6;
+                  if (nextIsDragging) suppressClickRef.current = true;
+
+                  setDragging((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          clientX: e.clientX,
+                          clientY: e.clientY,
+                          isDragging: nextIsDragging
+                        }
+                      : prev
+                  );
+                }}
+                onPointerUp={(e) => {
+                  if (!dragging) return;
+                  if (dragging.origin !== sq) return;
+
+                  // Not a drag (tap / click). Let the normal onClick handler run.
+                  if (!dragging.isDragging) {
+                    setDragging(null);
+                    return;
+                  }
+
+                  const boardEl = boardRef.current;
+                  if (!boardEl) {
+                    setDragging(null);
+                    return;
+                  }
+
+                  const rect = boardEl.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const y = e.clientY - rect.top;
+                  const fileIdx = Math.max(0, Math.min(7, Math.floor((x / rect.width) * 8)));
+                  const rankFromTop = Math.max(0, Math.min(7, Math.floor((y / rect.height) * 8)));
+
+                  const file = orientation === 'w' ? fileIdx : 7 - fileIdx;
+                  const rank = orientation === 'w' ? 7 - rankFromTop : rankFromTop;
+                  const dest = makeSquare(file, rank);
+
+                  if (dest === null) {
+                    setDragging(null);
+                    return;
+                  }
+
+                  // Treat as a drag-drop move attempt if destination differs.
+                  if (dest !== dragging.origin) {
+                    const destPiece = getPiece(state.board, dest);
+                    if (destPiece && destPiece.color === state.sideToMove) {
+                      // Dropped on own piece: change selection.
+                      onSquareClick(dest);
+                    } else {
+                      const candidates = dragging.legalMoves.filter((m) => m.to === dest);
+                      if (candidates.length > 0) {
+                        onMoveAttempt(dragging.origin, dest, candidates);
+                      }
+                    }
+                  }
+
+                  setDragging(null);
+                }}
                 disabled={disabled}
               >
                 <span className="boardPiece" aria-hidden>
-                  {piece ? pieceToGlyph(piece) : ''}
+                  {piece && !isDraggingOrigin ? pieceToGlyph(piece) : ''}
                 </span>
                 {/* Hint dots for legal moves. */}
                 {isLegal && !piece && <span className="boardHint" aria-hidden />}
@@ -156,6 +289,20 @@ export function ChessBoard({
             );
           })}
         </div>
+
+        {dragging?.isDragging && (
+          <div className="dragLayer" aria-hidden>
+            <div
+              className="dragPiece"
+              style={{
+                left: dragging.clientX,
+                top: dragging.clientY
+              }}
+            >
+              {pieceToGlyph(dragging.piece)}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

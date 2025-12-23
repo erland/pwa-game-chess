@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
 
@@ -15,7 +15,8 @@ describe('Local game board', () => {
 
     // e4 should be legal from the starting position.
     const e4 = screen.getByRole('button', { name: /square e4/i });
-    expect(e4).toHaveClass('boardSq-legal');
+    // Drag handlers + React state updates can make the highlight appear on the next tick.
+    await waitFor(() => expect(e4).toHaveClass('boardSq-legal'));
 
     await user.click(e4);
 
