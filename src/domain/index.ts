@@ -43,3 +43,7 @@ export {
 
 export { isInCheck, isSquareAttacked } from './attack';
 export { generateLegalMoves } from './legalMoves';
+
+export { applyMove } from './applyMove';
+export type { GameAction } from './reducer';
+export { gameReducer } from './reducer';
