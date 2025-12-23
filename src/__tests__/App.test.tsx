@@ -14,6 +14,6 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
     expect(screen.getByRole('heading', { name: /local game/i })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /chess board placeholder/i })).toBeInTheDocument();
+    expect(screen.getByRole('grid', { name: /chess board/i })).toBeInTheDocument();
   });
 });
