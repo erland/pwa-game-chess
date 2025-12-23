@@ -15,6 +15,14 @@ npm run dev
 npm test
 ```
 
+## Quality gates
+
+Run the same checks as CI:
+
+```bash
+npm run check
+```
+
 ## Build
 
 ```bash
@@ -33,3 +41,9 @@ Important details:
 Once enabled, pushes to `main` deploy to:
 
 `https://<user>.github.io/pwa-game-chess/`
+
+## PWA install / offline
+
+- When served from GitHub Pages (or locally via HTTPS), the app registers a service worker.
+- You can install it from your browser’s “Install app” / “Add to Home Screen” menu.
+- Navigation requests fall back to the app shell even when offline.

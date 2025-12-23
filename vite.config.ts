@@ -11,6 +11,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png'],
+      workbox: {
+        // Keep SPA navigation working offline (GitHub Pages base path).
+        navigateFallback: '/pwa-game-chess/index.html',
+        cleanupOutdatedCaches: true
+      },
       manifest: {
         name: 'PWA Chess',
         short_name: 'Chess',
@@ -32,6 +37,8 @@ export default defineConfig({
             type: 'image/png'
           },
           {
+            // Re-use the same icon as a "maskable" fallback.
+            // If you later add a dedicated maskable icon, swap this file.
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
