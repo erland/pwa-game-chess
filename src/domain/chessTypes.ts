@@ -69,6 +69,19 @@ export type Move = {
   captured?: Piece | null;
 };
 
+/**
+ * Game status/result for v1.
+ *
+ * Keep this serializable so later versions can persist and/or sync it.
+ */
+export type GameStatus =
+  | { kind: 'inProgress' }
+  | { kind: 'checkmate'; winner: Color }
+  | { kind: 'stalemate' }
+  | { kind: 'drawInsufficientMaterial' }
+  | { kind: 'drawAgreement' }
+  | { kind: 'resign'; winner: Color; loser: Color };
+
 export type Board = Array<Piece | null>;
 
 export type GameState = {
@@ -83,6 +96,12 @@ export type GameState = {
   fullmoveNumber: number;
   /** Played moves (sufficient for later replay/review features). */
   history: Move[];
+
+  /**
+   * Optional forced game end (used for local resign / draw agreement in v1).
+   * When set, the game is considered over.
+   */
+  forcedStatus: Exclude<GameStatus, { kind: 'inProgress' }> | null;
 };
 
 export function oppositeColor(c: Color): Color {

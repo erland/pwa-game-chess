@@ -21,6 +21,7 @@ function mkState(partial: Partial<GameState>): GameState {
     halfmoveClock: 0,
     fullmoveNumber: 1,
     history: [],
+    forcedStatus: null,
     ...partial
   };
 }

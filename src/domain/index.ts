@@ -2,6 +2,7 @@ export type {
   Board,
   CastlingRights,
   Color,
+  GameStatus,
   GameState,
   Move,
   Piece,
@@ -48,5 +49,4 @@ export { applyMove } from './applyMove';
 export type { GameAction } from './reducer';
 export { gameReducer } from './reducer';
 
-export type { GameStatus } from './gameStatus';
 export { getGameStatus } from './gameStatus';

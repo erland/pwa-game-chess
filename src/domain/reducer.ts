@@ -1,4 +1,5 @@
 import type { GameState, Move } from './chessTypes';
+import { oppositeColor } from './chessTypes';
 import { createInitialGameState } from './gameState';
 import { applyMove } from './applyMove';
 
@@ -13,7 +14,9 @@ import { applyMove } from './applyMove';
 
 export type GameAction =
   | { type: 'newGame' }
-  | { type: 'applyMove'; move: Move };
+  | { type: 'applyMove'; move: Move }
+  | { type: 'resign' }
+  | { type: 'agreeDraw' };
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -21,6 +24,15 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return createInitialGameState();
     case 'applyMove':
       return applyMove(state, action.move);
+    case 'resign': {
+      if (state.forcedStatus) return state;
+      const loser = state.sideToMove;
+      const winner = oppositeColor(loser);
+      return { ...state, forcedStatus: { kind: 'resign', winner, loser } };
+    }
+    case 'agreeDraw':
+      if (state.forcedStatus) return state;
+      return { ...state, forcedStatus: { kind: 'drawAgreement' } };
     default:
       return state;
   }

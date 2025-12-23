@@ -18,6 +18,7 @@ function baseState(overrides?: Partial<GameState>): GameState {
     halfmoveClock: 0,
     fullmoveNumber: 1,
     history: [],
+    forcedStatus: null,
     ...overrides
   };
 }

@@ -1,14 +1,8 @@
-import type { Color, GameState, Piece, Square } from './chessTypes';
+import type { Color, GameState, GameStatus, Piece, Square } from './chessTypes';
 import { oppositeColor } from './chessTypes';
 import { fileOf, rankOf } from './square';
 import { generateLegalMoves } from './legalMoves';
 import { isInCheck } from './attack';
-
-export type GameStatus =
-  | { kind: 'inProgress' }
-  | { kind: 'checkmate'; winner: Color }
-  | { kind: 'stalemate' }
-  | { kind: 'drawInsufficientMaterial' };
 
 function squareColorParity(square: Square): 0 | 1 {
   // a1 is 0 (dark), b1 is 1 (light), etc. We only need parity comparisons.
@@ -49,6 +43,8 @@ function isInsufficientMaterialMinimumSet(state: GameState): boolean {
 }
 
 export function getGameStatus(state: GameState): GameStatus {
+  if (state.forcedStatus) return state.forcedStatus;
+
   if (isInsufficientMaterialMinimumSet(state)) {
     return { kind: 'drawInsufficientMaterial' };
   }

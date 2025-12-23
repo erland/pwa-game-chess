@@ -1,5 +1,5 @@
-import { useMemo, useReducer, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useReducer, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   formatOrientation,
   formatTimeControl,
@@ -15,6 +15,8 @@ import { getGameStatus } from '../domain/gameStatus';
 import { isInCheck } from '../domain/attack';
 import { ChessBoard } from '../ui/ChessBoard';
 import { PromotionChooser } from '../ui/PromotionChooser';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { ResultDialog } from '../ui/ResultDialog';
 
 function makeLocalGameId(): string {
   return `local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -22,6 +24,7 @@ function makeLocalGameId(): string {
 
 export function GamePage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const timeControl = parseTimeControlParam(searchParams.get('tc'));
   const orientation = parseOrientationParam(searchParams.get('o'));
@@ -35,6 +38,11 @@ export function GamePage() {
     to: Square;
     options: Move[];
   } | null>(null);
+  const [confirm, setConfirm] = useState<
+    | { kind: 'resign'; title: string; message: string }
+    | { kind: 'draw'; title: string; message: string }
+    | null
+  >(null);
 
   const legalMovesFromSelection = useMemo(() => {
     if (selectedSquare === null) return [];
@@ -44,6 +52,14 @@ export function GamePage() {
   const status = useMemo(() => getGameStatus(state), [state]);
   const inCheck = status.kind === 'inProgress' ? isInCheck(state, state.sideToMove) : false;
   const isGameOver = status.kind !== 'inProgress';
+
+  // Close in-progress input dialogs if the game ends (mate/draw/resign).
+  useEffect(() => {
+    if (!isGameOver) return;
+    setConfirm(null);
+    setPendingPromotion(null);
+    setSelectedSquare(null);
+  }, [isGameOver]);
 
   if (!timeControl || !orientation) {
     return (
@@ -84,6 +100,7 @@ export function GamePage() {
   function handleSquareClick(square: Square) {
     if (isGameOver) return;
     if (pendingPromotion) return;
+    if (confirm) return;
 
     const piece = getPiece(state.board, square);
 
@@ -117,6 +134,7 @@ export function GamePage() {
   function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
     if (isGameOver) return;
     if (pendingPromotion) return;
+    if (confirm) return;
     // Drag-drop is allowed even if selection is out of sync.
     tryApplyCandidates(from, to, candidates);
   }
@@ -152,6 +170,11 @@ export function GamePage() {
               {status.kind === 'checkmate' && `Checkmate — ${status.winner === 'w' ? 'White' : 'Black'} wins`}
               {status.kind === 'stalemate' && 'Draw — stalemate'}
               {status.kind === 'drawInsufficientMaterial' && 'Draw — insufficient material'}
+              {status.kind === 'drawAgreement' && 'Draw — agreed'}
+              {status.kind === 'resign' &&
+                `${status.loser === 'w' ? 'White' : 'Black'} resigned — ${
+                  status.winner === 'w' ? 'White' : 'Black'
+                } wins`}
             </div>
           </div>
           <div className="metaActions">
@@ -161,11 +184,47 @@ export function GamePage() {
               onClick={() => {
                 dispatch({ type: 'newGame' });
                 setSelectedSquare(null);
+                setPendingPromotion(null);
               }}
+              disabled={Boolean(pendingPromotion) || Boolean(confirm)}
             >
               Restart
             </button>
           </div>
+        </div>
+
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() =>
+              setConfirm({
+                kind: 'draw',
+                title: 'Offer draw',
+                message: 'Offer a draw and accept it immediately?'
+              })
+            }
+            disabled={isGameOver || Boolean(pendingPromotion) || Boolean(confirm)}
+          >
+            Offer draw
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() =>
+              setConfirm({
+                kind: 'resign',
+                title: 'Resign',
+                message: `Resign as ${state.sideToMove === 'w' ? 'White' : 'Black'}?`
+              })
+            }
+            disabled={isGameOver || Boolean(pendingPromotion) || Boolean(confirm)}
+          >
+            Resign
+          </button>
+          <Link to="/" className="btn btn-secondary" aria-label="Back to Home">
+            Home
+          </Link>
         </div>
       </div>
 
@@ -178,7 +237,7 @@ export function GamePage() {
           legalMovesFromSelection={legalMovesFromSelection}
           onSquareClick={handleSquareClick}
           onMoveAttempt={handleMoveAttempt}
-          disabled={isGameOver || Boolean(pendingPromotion)}
+          disabled={isGameOver || Boolean(pendingPromotion) || Boolean(confirm)}
         />
         <p className="muted">Tap to move, or drag a piece to a highlighted square.</p>
 
@@ -195,6 +254,40 @@ export function GamePage() {
               setPendingPromotion(null);
               // Keep selection so the user can try again.
             }}
+          />
+        )}
+
+        {confirm && (
+          <ConfirmDialog
+            title={confirm.title}
+            message={confirm.message}
+            confirmLabel={confirm.kind === 'resign' ? 'Resign' : 'Agree draw'}
+            cancelLabel="Cancel"
+            onCancel={() => setConfirm(null)}
+            onConfirm={() => {
+              if (confirm.kind === 'resign') {
+                dispatch({ type: 'resign' });
+              } else {
+                dispatch({ type: 'agreeDraw' });
+              }
+              setConfirm(null);
+              setSelectedSquare(null);
+              setPendingPromotion(null);
+            }}
+          />
+        )}
+
+        {isGameOver && (
+          <ResultDialog
+            status={status as Exclude<typeof status, { kind: 'inProgress' }>}
+            onRestart={() => {
+              dispatch({ type: 'newGame' });
+              setSelectedSquare(null);
+              setPendingPromotion(null);
+              setConfirm(null);
+            }}
+            onNewGame={() => navigate('/local/setup')}
+            onHome={() => navigate('/')}
           />
         )}
 

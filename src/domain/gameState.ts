@@ -16,6 +16,7 @@ export function createInitialGameState(): GameState {
     enPassantTarget: null,
     halfmoveClock: 0,
     fullmoveNumber: 1,
-    history: []
+    history: [],
+    forcedStatus: null
   };
 }

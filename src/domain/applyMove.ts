@@ -103,6 +103,9 @@ function isPromotionMove(moving: Piece, to: Square): boolean {
 }
 
 export function applyMove(state: GameState, inputMove: Move): GameState {
+  // If the game has been ended manually (resign/draw), ignore further moves.
+  if (state.forcedStatus) return state;
+
   const moving = getPiece(state.board, inputMove.from);
   if (!moving) return state;
   if (moving.color !== state.sideToMove) return state;
