@@ -11,6 +11,10 @@ export type ChessBoardProps = {
   orientation: Orientation;
   selectedSquare: Square | null;
   legalMovesFromSelection: Move[];
+  /** Last move played (for highlighting). */
+  lastMove?: { from: Square; to: Square } | null;
+  /** Squares to highlight as "in check" (typically one king square). */
+  checkSquares?: Square[];
   onSquareClick: (square: Square) => void;
   onMoveAttempt: (from: Square, to: Square, candidates: Move[]) => void;
   disabled?: boolean;
@@ -87,6 +91,8 @@ export function ChessBoard({
   orientation,
   selectedSquare,
   legalMovesFromSelection,
+  lastMove,
+  checkSquares,
   onSquareClick,
   onMoveAttempt,
   disabled
@@ -109,6 +115,10 @@ export function ChessBoard({
   const effectiveLegalMoves = dragging ? dragging.legalMoves : legalMovesFromSelection;
 
   const displaySquares = squaresForOrientation(orientation);
+
+  const lastFrom = lastMove ? lastMove.from : null;
+  const lastTo = lastMove ? lastMove.to : null;
+  const checkSet = new Set<Square>(checkSquares ?? []);
 
   const legalDestinations = new Set<Square>();
   const captureDestinations = new Set<Square>();
@@ -156,11 +166,17 @@ export function ChessBoard({
             const isLegal = legalDestinations.has(sq);
             const isCapture = captureDestinations.has(sq);
             const isDark = isDarkSquare(sq);
+            const isLastFrom = lastFrom === sq;
+            const isLastTo = lastTo === sq;
+            const isCheck = checkSet.has(sq);
 
             const className = [
               'boardSq',
               isDark ? 'boardSq-dark' : 'boardSq-light',
               isSelected ? 'boardSq-selected' : '',
+              isLastFrom ? 'boardSq-lastFrom' : '',
+              isLastTo ? 'boardSq-lastTo' : '',
+              isCheck ? 'boardSq-check' : '',
               isLegal ? 'boardSq-legal' : '',
               isCapture ? 'boardSq-capture' : ''
             ]
@@ -270,9 +286,8 @@ export function ChessBoard({
                       onSquareClick(dest);
                     } else {
                       const candidates = dragging.legalMoves.filter((m) => m.to === dest);
-                      if (candidates.length > 0) {
-                        onMoveAttempt(dragging.origin, dest, candidates);
-                      }
+                      // Always report the attempt so the parent can show feedback.
+                      onMoveAttempt(dragging.origin, dest, candidates);
                     }
                   }
 

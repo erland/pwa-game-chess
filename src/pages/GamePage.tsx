@@ -11,9 +11,10 @@ import { oppositeColor } from '../domain/chessTypes';
 import { createInitialGameState } from '../domain/gameState';
 import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
+import { generatePseudoLegalMoves } from '../domain/movegen';
 import { gameReducer } from '../domain/reducer';
 import { getGameStatus } from '../domain/gameStatus';
-import { isInCheck } from '../domain/attack';
+import { findKing, isInCheck } from '../domain/attack';
 import { ChessBoard } from '../ui/ChessBoard';
 import { PromotionChooser } from '../ui/PromotionChooser';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -58,6 +59,22 @@ export function GamePage() {
     | null
   >(null);
 
+  // Step 9/8 alignment: brief feedback for illegal move attempts.
+  const [noticeText, setNoticeText] = useState<string | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
+
+  function showNotice(text: string) {
+    setNoticeText(text);
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => setNoticeText(null), 1500);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
+
   const legalMovesFromSelection = useMemo(() => {
     if (selectedSquare === null) return [];
     return generateLegalMoves(state, selectedSquare);
@@ -66,6 +83,19 @@ export function GamePage() {
   const status = useMemo(() => getGameStatus(state), [state]);
   const inCheck = status.kind === 'inProgress' ? isInCheck(state, state.sideToMove) : false;
   const isGameOver = status.kind !== 'inProgress';
+
+  const lastMove = useMemo(() => {
+    if (state.history.length === 0) return null;
+    const m = state.history[state.history.length - 1];
+    return { from: m.from, to: m.to };
+  }, [state.history]);
+
+  const checkSquares = useMemo(() => {
+    if (status.kind !== 'inProgress') return [] as Square[];
+    if (!inCheck) return [] as Square[];
+    const k = findKing(state, state.sideToMove);
+    return k === null ? ([] as Square[]) : [k];
+  }, [status.kind, inCheck, state, state.sideToMove]);
 
   const stateRef = useRef(state);
   useEffect(() => {
@@ -171,6 +201,7 @@ export function GamePage() {
     setConfirm(null);
     setPendingPromotion(null);
     setSelectedSquare(null);
+    setNoticeText(null);
   }, [isGameOver]);
 
   if (!timeControl || !orientation) {
@@ -220,6 +251,8 @@ export function GamePage() {
     if (selectedSquare === null) {
       if (piece && piece.color === state.sideToMove) {
         setSelectedSquare(square);
+      } else if (piece && piece.color !== state.sideToMove) {
+        showNotice('Illegal move');
       }
       return;
     }
@@ -238,7 +271,12 @@ export function GamePage() {
 
     // Otherwise: try to make a move.
     const candidates = legalMovesFromSelection.filter((m) => m.to === square);
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) {
+      // Provide brief feedback: distinguish "pseudolegal but illegal" (king safety) from other illegal attempts.
+      const pseudo = generatePseudoLegalMoves(state, selectedSquare).filter((m) => m.to === square);
+      showNotice(pseudo.length > 0 ? 'King would be in check' : 'Illegal move');
+      return;
+    }
 
     tryApplyCandidates(selectedSquare, square, candidates);
   }
@@ -248,6 +286,12 @@ export function GamePage() {
     if (pendingPromotion) return;
     if (confirm) return;
     // Drag-drop is allowed even if selection is out of sync.
+    if (candidates.length === 0) {
+      const pseudo = generatePseudoLegalMoves(state, from).filter((m) => m.to === to);
+      showNotice(pseudo.length > 0 ? 'King would be in check' : 'Illegal move');
+      setSelectedSquare(from);
+      return;
+    }
     tryApplyCandidates(from, to, candidates);
   }
 
@@ -371,10 +415,17 @@ export function GamePage() {
           orientation={orientation}
           selectedSquare={selectedSquare}
           legalMovesFromSelection={legalMovesFromSelection}
+          lastMove={lastMove}
+          checkSquares={checkSquares}
           onSquareClick={handleSquareClick}
           onMoveAttempt={handleMoveAttempt}
           disabled={isGameOver || Boolean(pendingPromotion) || Boolean(confirm)}
         />
+        {noticeText && (
+          <div className="toast" role="status" aria-live="polite">
+            {noticeText}
+          </div>
+        )}
         <p className="muted">Tap to move, or drag a piece to a highlighted square.</p>
 
         {pendingPromotion && (

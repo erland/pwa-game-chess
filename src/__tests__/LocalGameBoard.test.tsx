@@ -21,8 +21,14 @@ describe('Local game board', () => {
     await user.click(e4);
 
     // Pawn moved.
-    expect(screen.getByRole('button', { name: /square e4, white pawn/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^square e2$/i })).toBeInTheDocument();
+    const e4After = screen.getByRole('button', { name: /square e4, white pawn/i });
+    const e2After = screen.getByRole('button', { name: /^square e2$/i });
+    expect(e4After).toBeInTheDocument();
+    expect(e2After).toBeInTheDocument();
+
+    // Step 8 alignment: last move highlighting.
+    expect(e2After).toHaveClass('boardSq-lastFrom');
+    expect(e4After).toHaveClass('boardSq-lastTo');
 
     // Side to move flips.
     expect(screen.getByText(/black/i)).toBeInTheDocument();
