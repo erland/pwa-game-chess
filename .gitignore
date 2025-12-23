@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 digest*
+pwa-game-*
 
 # Editor directories and files
 .vscode/*

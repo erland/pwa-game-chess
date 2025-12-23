@@ -28,6 +28,8 @@ export { cloneBoard, countPieces, createEmptyBoard, createStartingBoard, getPiec
 
 export { createInitialGameState, STARTING_CASTLING_RIGHTS } from './gameState';
 
+export { generatePseudoLegalMoves } from './movegen';
+
 export type { LocalGameSetup, Orientation, TimeControl } from './localSetup';
 export {
   DEFAULT_LOCAL_SETUP,
