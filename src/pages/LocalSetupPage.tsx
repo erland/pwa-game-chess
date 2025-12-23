@@ -11,6 +11,10 @@ import {
 function sameTimeControl(a: TimeControl, b: TimeControl): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === 'none') return true;
+
+  // At this point `a` is fischer; narrow `b` too (TS doesn't infer the correlation from a.kind !== b.kind).
+  if (b.kind === 'none') return false;
+
   return a.initialSeconds === b.initialSeconds && a.incrementSeconds === b.incrementSeconds;
 }
 

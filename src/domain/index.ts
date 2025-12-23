@@ -40,3 +40,6 @@ export {
   parseTimeControlParam,
   serializeTimeControlParam
 } from './localSetup';
+
+export { isInCheck, isSquareAttacked } from './attack';
+export { generateLegalMoves } from './legalMoves';
