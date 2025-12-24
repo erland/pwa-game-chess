@@ -343,6 +343,15 @@ h1 {
   box-shadow: inset 0 0 0 4px rgba(236, 72, 153, 0.55);
 }
 
+/* v2 Step 6: hint highlight (recommended move suggestion) */
+.boardSq-hintFrom {
+  box-shadow: inset 0 0 0 4px rgba(139, 92, 246, 0.55);
+}
+
+.boardSq-hintTo {
+  box-shadow: inset 0 0 0 4px rgba(139, 92, 246, 0.85);
+}
+
 .boardHint {
   position: absolute;
   width: 18%;

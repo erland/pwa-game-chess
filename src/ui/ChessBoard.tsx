@@ -11,6 +11,8 @@ export type ChessBoardProps = {
   orientation: Orientation;
   selectedSquare: Square | null;
   legalMovesFromSelection: Move[];
+  /** Optional hint move (for highlighting). */
+  hintMove?: { from: Square; to: Square } | null;
   /** Last move played (for highlighting). */
   lastMove?: { from: Square; to: Square } | null;
   /** Squares to highlight as "in check" (typically one king square). */
@@ -91,6 +93,7 @@ export function ChessBoard({
   orientation,
   selectedSquare,
   legalMovesFromSelection,
+  hintMove,
   lastMove,
   checkSquares,
   onSquareClick,
@@ -118,6 +121,8 @@ export function ChessBoard({
 
   const lastFrom = lastMove ? lastMove.from : null;
   const lastTo = lastMove ? lastMove.to : null;
+  const hintFrom = hintMove ? hintMove.from : null;
+  const hintTo = hintMove ? hintMove.to : null;
   const checkSet = new Set<Square>(checkSquares ?? []);
 
   const legalDestinations = new Set<Square>();
@@ -169,6 +174,8 @@ export function ChessBoard({
             const isLastFrom = lastFrom === sq;
             const isLastTo = lastTo === sq;
             const isCheck = checkSet.has(sq);
+            const isHintFrom = hintFrom === sq;
+            const isHintTo = hintTo === sq;
 
             const className = [
               'boardSq',
@@ -178,7 +185,9 @@ export function ChessBoard({
               isLastTo ? 'boardSq-lastTo' : '',
               isCheck ? 'boardSq-check' : '',
               isLegal ? 'boardSq-legal' : '',
-              isCapture ? 'boardSq-capture' : ''
+              isCapture ? 'boardSq-capture' : '',
+              isHintFrom ? 'boardSq-hintFrom' : '',
+              isHintTo ? 'boardSq-hintTo' : ''
             ]
               .filter(Boolean)
               .join(' ');

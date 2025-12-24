@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   formatOrientation,
@@ -27,6 +27,7 @@ import { useAiController } from './game/useAiController';
 import type { ChessAi } from '../domain/ai/types';
 import { aiConfigFromDifficulty } from '../domain/ai/presets';
 import { HeuristicBot } from '../domain/ai/heuristicBot';
+import { toAlgebraic } from '../domain/square';
 
 function makeGameId(mode: GameMode): string {
   const prefix = mode === 'local' ? 'local' : 'vs';
@@ -44,6 +45,27 @@ function parseFloatParam(param: string | null): number | null {
   if (param == null) return null;
   const n = Number.parseFloat(param);
   return Number.isFinite(n) ? n : null;
+}
+
+function cloneStateSnapshot<T>(state: T): T {
+  // GameState is JSON-serializable by design in this project.
+  // A deep clone avoids subtle bugs where AI sees a mutated reference.
+  return JSON.parse(JSON.stringify(state)) as T;
+}
+
+function isAbortError(err: unknown): boolean {
+  return Boolean(err) && typeof err === 'object' && (err as { name?: unknown }).name === 'AbortError';
+}
+
+function movesEqual(a: Move, b: Move): boolean {
+  return (
+    a.from === b.from &&
+    a.to === b.to &&
+    (a.promotion ?? null) === (b.promotion ?? null) &&
+    Boolean(a.isCastle) === Boolean(b.isCastle) &&
+    (a.castleSide ?? null) === (b.castleSide ?? null) &&
+    Boolean(a.isEnPassant) === Boolean(b.isEnPassant)
+  );
 }
 
 export function GamePage() {
@@ -82,6 +104,9 @@ export function GamePage() {
   }, [difficulty, customThinkTimeMs, customRandomness]);
 
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createInitialGameState());
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<{
     from: Square;
@@ -93,6 +118,30 @@ export function GamePage() {
     | { kind: 'draw'; title: string; message: string }
     | null
   >(null);
+
+  // v2 Step 6: Hint feature (recommended move for the player).
+  const [hintMove, setHintMove] = useState<{ from: Square; to: Square } | null>(null);
+  const [hintText, setHintText] = useState<string | null>(null);
+  const [isHintThinking, setIsHintThinking] = useState(false);
+  const hintAbortRef = useRef<AbortController | null>(null);
+  const hintRequestRef = useRef(0);
+
+  function clearHint() {
+    // Bump the request id so any in-flight promise result is treated as stale,
+    // even if a particular AI implementation ignores AbortSignal.
+    hintRequestRef.current += 1;
+    hintAbortRef.current?.abort();
+    hintAbortRef.current = null;
+    setIsHintThinking(false);
+    setHintMove(null);
+    setHintText(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      hintAbortRef.current?.abort();
+    };
+  }, []);
 
   // Step 9/8 alignment: brief feedback for illegal move attempts.
   const { noticeText, showNotice, clearNotice } = useToastNotice(1500);
@@ -121,6 +170,7 @@ export function GamePage() {
     ai,
     config: aiConfig,
     onApplyMove: (move) => {
+      clearHint();
       dispatch({ type: 'applyMove', move });
       setSelectedSquare(null);
       setPendingPromotion(null);
@@ -135,8 +185,17 @@ export function GamePage() {
     setConfirm(null);
     setPendingPromotion(null);
     setSelectedSquare(null);
+    clearHint();
     clearNotice();
   }, [isGameOver, clearNotice]);
+
+  // If any move is played (or the game ends), clear any stale hint.
+  useEffect(() => {
+    // Don't wipe a hint while we're actively computing it.
+    if (isHintThinking) return;
+    setHintMove(null);
+    setHintText(null);
+  }, [state.history.length, state.forcedStatus]);
 
   const setupPath = mode === 'vsComputer' ? '/vs-computer/setup' : '/local/setup';
   const setupLabel = mode === 'vsComputer' ? 'Go to vs computer setup' : 'Go to local setup';
@@ -165,6 +224,9 @@ export function GamePage() {
   function tryApplyCandidates(from: Square, to: Square, candidates: Move[]) {
     if (candidates.length === 0) return;
 
+    // Any manual move attempt consumes the hint (and cancels in-flight hint work).
+    if (isHintThinking || hintMove || hintText) clearHint();
+
     const promo = candidates.filter((m) => Boolean(m.promotion));
     if (promo.length > 0) {
       // Ask the user which piece to promote to.
@@ -175,6 +237,77 @@ export function GamePage() {
     // Non-promotion: there should be exactly one legal candidate.
     dispatch({ type: 'applyMove', move: candidates[0] });
     setSelectedSquare(null);
+  }
+
+  async function requestHint() {
+    if (mode !== 'vsComputer') return;
+    if (isGameOver) return;
+    if (pendingPromotion || confirm) return;
+    if (aiCtl.isThinking) return;
+    // Only compute a hint for the player's turn.
+    if (state.sideToMove !== playerColor) return;
+
+    // Cancel any previous hint request.
+    hintAbortRef.current?.abort();
+    const reqId = ++hintRequestRef.current;
+    const ac = new AbortController();
+    hintAbortRef.current = ac;
+
+    const snapshot = cloneStateSnapshot(state);
+    const snapshotHistoryLen = snapshot.history.length;
+    const snapshotSideToMove = snapshot.sideToMove;
+
+    // Use a deterministic, "best move" configuration for hints.
+    // Keep it fast even if the selected difficulty is "Hard".
+    const hintConfig = {
+      ...aiConfig,
+      difficulty: 'hard' as const,
+      maxDepth: Math.max(2, aiConfig.maxDepth ?? 1),
+      randomness: 0,
+      thinkTimeMs: Math.max(80, Math.min(250, aiConfig.thinkTimeMs ?? 180))
+    };
+
+    setIsHintThinking(true);
+    setHintMove(null);
+    setHintText(null);
+
+    try {
+      const res = await (ai ?? new HeuristicBot()).getMove(
+        {
+          state: snapshot,
+          aiColor: snapshotSideToMove,
+          config: hintConfig,
+          requestId: `hint_${reqId}`
+        },
+        ac.signal
+      );
+
+      // Ignore stale results.
+      if (ac.signal.aborted) return;
+      if (hintRequestRef.current !== reqId) return;
+
+      // If the position changed (player made a move / AI moved), ignore the result.
+      const current = stateRef.current;
+      if (current.history.length !== snapshotHistoryLen) return;
+      if (current.sideToMove !== snapshotSideToMove) return;
+
+      // Validate move (defensive): it must still be legal.
+      const legal = generateLegalMoves(current);
+      const match = legal.find((m) => movesEqual(m, res.move));
+      if (!match) {
+        setIsHintThinking(false);
+        showNotice('Hint unavailable');
+        return;
+      }
+
+      setIsHintThinking(false);
+      setHintMove({ from: match.from, to: match.to });
+      setHintText(`${toAlgebraic(match.from)} → ${toAlgebraic(match.to)}`);
+    } catch (e: unknown) {
+      if (isAbortError(e)) return;
+      setIsHintThinking(false);
+      showNotice('Hint failed');
+    }
   }
 
   function handleSquareClick(square: Square) {
@@ -222,6 +355,7 @@ export function GamePage() {
 
   function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
     if (isGameOver) return;
+    if (isHintThinking || hintMove || hintText) clearHint();
     if (mode === 'vsComputer' && state.sideToMove === aiColor) return;
     if (aiCtl.isThinking) return;
     if (pendingPromotion) return;
@@ -292,6 +426,24 @@ export function GamePage() {
           </div>
         )}
 
+        {mode === 'vsComputer' && (isHintThinking || hintText) && (
+          <div
+            className="notice"
+            role={isHintThinking ? 'status' : 'note'}
+            aria-live="polite"
+            aria-label="Hint"
+            style={{ marginTop: 12 }}
+          >
+            {isHintThinking ? (
+              'Calculating hint…'
+            ) : (
+              <>
+                Hint: <strong>{hintText}</strong>
+              </>
+            )}
+          </div>
+        )}
+
 
         <div className="gameMeta">
           {hasClock && clock && (
@@ -343,6 +495,7 @@ export function GamePage() {
               onClick={() => {
                 // If the computer is thinking, cancel it before restarting.
                 aiCtl.cancel();
+                clearHint();
                 dispatch({ type: 'newGame' });
                 setSelectedSquare(null);
                 setPendingPromotion(null);
@@ -355,6 +508,33 @@ export function GamePage() {
         </div>
 
         <div className="actions" style={{ marginTop: 12 }}>
+          {mode === 'vsComputer' && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                if (isHintThinking || hintText) {
+                  clearHint();
+                } else {
+                  void requestHint();
+                }
+              }}
+              disabled={
+                // If we're already showing a hint or computing one, allow the user to cancel/hide.
+                !isHintThinking &&
+                !hintText &&
+                (isGameOver ||
+                  aiCtl.isThinking ||
+                  Boolean(pendingPromotion) ||
+                  Boolean(confirm) ||
+                  // Only allow hint on the player's turn.
+                  state.sideToMove !== playerColor)
+              }
+            >
+              {isHintThinking ? 'Cancel hint' : hintText ? 'Hide hint' : 'Hint'}
+            </button>
+          )}
+
           <button
             type="button"
             className="btn btn-secondary"
@@ -399,6 +579,7 @@ export function GamePage() {
           orientation={orientation}
           selectedSquare={selectedSquare}
           legalMovesFromSelection={legalMovesFromSelection}
+          hintMove={hintMove}
           lastMove={lastMove}
           checkSquares={checkSquares}
           onSquareClick={handleSquareClick}
@@ -423,6 +604,7 @@ export function GamePage() {
             color={state.sideToMove}
             options={pendingPromotion.options}
             onChoose={(move) => {
+              clearHint();
               dispatch({ type: 'applyMove', move });
               setPendingPromotion(null);
               setSelectedSquare(null);
@@ -445,6 +627,7 @@ export function GamePage() {
               // If the computer is thinking and the user ends the game, cancel the in-flight AI request
               // immediately so it can't apply a stale move.
               aiCtl.cancel();
+              clearHint();
               if (confirm.kind === 'resign') {
                 dispatch({ type: 'resign', loser: mode === 'vsComputer' ? playerColor : undefined });
               } else {
@@ -462,6 +645,7 @@ export function GamePage() {
             status={status as Exclude<typeof status, { kind: 'inProgress' }>}
             onRestart={() => {
               aiCtl.cancel();
+              clearHint();
               dispatch({ type: 'newGame' });
               setSelectedSquare(null);
               setPendingPromotion(null);
