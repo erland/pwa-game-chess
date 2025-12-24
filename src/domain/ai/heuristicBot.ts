@@ -30,6 +30,42 @@ function abortIfNeeded(signal: AbortSignal): void {
   throw err;
 }
 
+function sleepMs(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      try {
+        abortIfNeeded(signal);
+      } catch (e) {
+        reject(e);
+      }
+      return;
+    }
+
+    const t = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      cleanup();
+      try {
+        abortIfNeeded(signal);
+      } catch (e) {
+        reject(e);
+      }
+    };
+
+    const cleanup = () => {
+      clearTimeout(t);
+      signal.removeEventListener('abort', onAbort);
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 function clamp01(x: number): number {
   if (!Number.isFinite(x)) return 0;
   return Math.max(0, Math.min(1, x));
@@ -241,6 +277,14 @@ export class HeuristicBot implements ChessAi {
 
     const picked = chooseFromTop(scored, rng, randomness);
     const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+    // Respect the configured thinking time budget if provided.
+    // This improves UX ("Computer thinking…") and gives time for actions like resign/restart.
+    if (typeof config.thinkTimeMs === 'number' && config.thinkTimeMs > 0) {
+      const elapsed = Math.max(0, Math.round(t1 - t0));
+      const remaining = Math.max(0, Math.round(config.thinkTimeMs - elapsed));
+      await sleepMs(remaining, signal);
+    }
 
     return {
       move: picked.move,

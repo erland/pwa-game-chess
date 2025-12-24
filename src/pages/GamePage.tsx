@@ -309,6 +309,8 @@ export function GamePage() {
               type="button"
               className="btn btn-secondary"
               onClick={() => {
+                // If the computer is thinking, cancel it before restarting.
+                aiCtl.cancel();
                 dispatch({ type: 'newGame' });
                 setSelectedSquare(null);
                 setPendingPromotion(null);
@@ -342,7 +344,10 @@ export function GamePage() {
               setConfirm({
                 kind: 'resign',
                 title: 'Resign',
-                message: `Resign as ${state.sideToMove === 'w' ? 'White' : 'Black'}?`
+                message:
+                  mode === 'vsComputer'
+                    ? `Resign as ${playerColor === 'w' ? 'White' : 'Black'}?`
+                    : `Resign as ${state.sideToMove === 'w' ? 'White' : 'Black'}?`
               })
             }
             disabled={isGameOver || Boolean(pendingPromotion) || Boolean(confirm)}
@@ -405,8 +410,11 @@ export function GamePage() {
             cancelLabel="Cancel"
             onCancel={() => setConfirm(null)}
             onConfirm={() => {
+              // If the computer is thinking and the user ends the game, cancel the in-flight AI request
+              // immediately so it can't apply a stale move.
+              aiCtl.cancel();
               if (confirm.kind === 'resign') {
-                dispatch({ type: 'resign' });
+                dispatch({ type: 'resign', loser: mode === 'vsComputer' ? playerColor : undefined });
               } else {
                 dispatch({ type: 'agreeDraw' });
               }
@@ -421,12 +429,13 @@ export function GamePage() {
           <ResultDialog
             status={status as Exclude<typeof status, { kind: 'inProgress' }>}
             onRestart={() => {
+              aiCtl.cancel();
               dispatch({ type: 'newGame' });
               setSelectedSquare(null);
               setPendingPromotion(null);
               setConfirm(null);
             }}
-            onNewGame={() => navigate('/local/setup')}
+            onNewGame={() => navigate(setupPath)}
             onHome={() => navigate('/')}
           />
         )}

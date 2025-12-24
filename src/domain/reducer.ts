@@ -15,7 +15,7 @@ import { applyMove } from './applyMove';
 export type GameAction =
   | { type: 'newGame' }
   | { type: 'applyMove'; move: Move }
-  | { type: 'resign' }
+  | { type: 'resign'; loser?: GameState['sideToMove'] }
   | { type: 'agreeDraw' }
   | { type: 'timeout'; loser: GameState['sideToMove'] };
 
@@ -27,7 +27,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return applyMove(state, action.move);
     case 'resign': {
       if (state.forcedStatus) return state;
-      const loser = state.sideToMove;
+      const loser = action.loser ?? state.sideToMove;
       const winner = oppositeColor(loser);
       return { ...state, forcedStatus: { kind: 'resign', winner, loser } };
     }
