@@ -11,13 +11,15 @@ export function HomePage() {
           <Link to="/local/setup" className="btn btn-primary">
             Play → Local
           </Link>
+          <Link to="/vs-computer/setup" className="btn">
+            Play → Vs Computer
+          </Link>
         </div>
       </div>
 
       <div className="card">
         <h2>Coming later</h2>
         <ul>
-          <li>Play vs Computer (v2)</li>
           <li>Play Online (v3)</li>
           <li>Review Games (v4)</li>
         </ul>

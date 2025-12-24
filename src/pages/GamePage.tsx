@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   formatOrientation,
   formatTimeControl,
@@ -7,6 +7,8 @@ import {
   parseTimeControlParam
 } from '../domain/localSetup';
 import type { Move, Square } from '../domain/chessTypes';
+import { parseGameModeParam, type GameMode } from '../domain/gameMode';
+import { formatDifficulty, formatSideChoice, parseDifficultyParam, parseSideChoiceParam } from '../domain/vsComputerSetup';
 import { createInitialGameState } from '../domain/gameState';
 import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
@@ -20,18 +22,27 @@ import { useDerivedGameView } from './game/useDerivedGameView';
 import { useLocalClocks, formatClockMs } from './game/useLocalClocks';
 import { useToastNotice } from './game/useToastNotice';
 
-function makeLocalGameId(): string {
-  return `local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+function makeGameId(mode: GameMode): string {
+  const prefix = mode === 'local' ? 'local' : 'vs';
+  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 export function GamePage() {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+
+  const modeFromParam = parseGameModeParam(searchParams.get('m'));
+  const mode: GameMode = modeFromParam ?? (location.pathname.startsWith('/vs-computer') ? 'vsComputer' : 'local');
+
+  const playerSideChoice = parseSideChoiceParam(searchParams.get('side')) ?? 'w';
+  const difficulty = parseDifficultyParam(searchParams.get('d')) ?? 'easy';
+
   const navigate = useNavigate();
 
   const timeControl = parseTimeControlParam(searchParams.get('tc'));
   const orientation = parseOrientationParam(searchParams.get('o'));
 
-  const gameId = useMemo(() => makeLocalGameId(), []);
+  const gameId = useMemo(() => makeGameId(mode), [mode]);
 
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createInitialGameState());
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
@@ -72,17 +83,20 @@ export function GamePage() {
     clearNotice();
   }, [isGameOver, clearNotice]);
 
+  const setupPath = mode === 'vsComputer' ? '/vs-computer/setup' : '/local/setup';
+  const setupLabel = mode === 'vsComputer' ? 'Go to vs computer setup' : 'Go to local setup';
+
   if (!timeControl || !orientation) {
     return (
       <section className="stack">
         <div className="card">
           <h2>Missing or invalid setup</h2>
           <p className="muted">
-            This page expects setup parameters in the URL. Please go back and start a new local game.
+            This page expects setup parameters in the URL. Please go back and start a new game.
           </p>
           <div className="actions">
-            <Link to="/local/setup" className="btn btn-primary">
-              Go to local setup
+            <Link to={setupPath} className="btn btn-primary">
+              {setupLabel}
             </Link>
             <Link to="/" className="btn btn-secondary">
               Home
@@ -166,7 +180,7 @@ export function GamePage() {
   return (
     <section className="stack">
       <div className="card">
-        <h2>Local game</h2>
+        <h2>{mode === 'local' ? 'Local game' : 'Vs computer game'}</h2>
         <p className="muted">
           Game ID: <code>{gameId}</code>
         </p>
@@ -180,7 +194,26 @@ export function GamePage() {
             <dt>Orientation</dt>
             <dd>{formatOrientation(orientation)}</dd>
           </div>
+          {mode === 'vsComputer' && (
+            <>
+              <div>
+                <dt>Your side</dt>
+                <dd>{formatSideChoice(playerSideChoice)}</dd>
+              </div>
+              <div>
+                <dt>Difficulty</dt>
+                <dd>{formatDifficulty(difficulty)}</dd>
+              </div>
+            </>
+          )}
         </dl>
+
+        {mode === 'vsComputer' && (
+          <div className="notice" role="note" style={{ marginTop: 12 }}>
+            <strong>Note:</strong> Vs-computer AI is wired up in later v2 steps. For now you can play both sides.
+          </div>
+        )}
+
 
         <div className="gameMeta">
           {hasClock && clock && (
@@ -347,7 +380,7 @@ export function GamePage() {
         )}
 
         <div className="actions">
-          <Link to="/local/setup" className="btn btn-primary">
+            <Link to={setupPath} className="btn btn-primary">
             New game
           </Link>
           <Link to="/" className="btn btn-secondary">

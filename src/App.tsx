@@ -2,6 +2,7 @@ import './App.css';
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
 import { LocalSetupPage } from './pages/LocalSetupPage';
+import { VsComputerSetupPage } from './pages/VsComputerSetupPage';
 import { GamePage } from './pages/GamePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { AppShell } from './ui/AppShell';
@@ -13,7 +14,9 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/local/setup" element={<LocalSetupPage />} />
+          <Route path="/vs-computer/setup" element={<VsComputerSetupPage />} />
           <Route path="/local/game" element={<GamePage />} />
+          <Route path="/vs-computer/game" element={<GamePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
