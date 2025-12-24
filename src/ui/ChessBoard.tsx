@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import type { Orientation } from '../domain/localSetup';
 import type { GameState, Move, Piece, Square } from '../domain/chessTypes';
@@ -117,7 +117,7 @@ export function ChessBoard({
   const effectiveSelectedSquare = dragging ? dragging.origin : selectedSquare;
   const effectiveLegalMoves = dragging ? dragging.legalMoves : legalMovesFromSelection;
 
-  const displaySquares = squaresForOrientation(orientation);
+  const displaySquares = useMemo(() => squaresForOrientation(orientation), [orientation]);
 
   const lastFrom = lastMove ? lastMove.from : null;
   const lastTo = lastMove ? lastMove.to : null;
@@ -264,11 +264,6 @@ export function ChessBoard({
                   if (disabled) {
                     setDragging(null);
                     suppressClickRef.current = false;
-                    return;
-                  }
-
-                  if (disabled) {
-                    setDragging(null);
                     return;
                   }
 

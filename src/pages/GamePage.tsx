@@ -401,6 +401,12 @@ export function GamePage() {
     <section className="stack">
       <div className="card">
         <h2>{mode === 'local' ? 'Local game' : 'Vs computer game'}</h2>
+        {mode === 'vsComputer' && (
+          <p className="muted vsHeaderLine">
+            You: <strong>{playerColor === 'w' ? 'White' : 'Black'}</strong> <span aria-hidden>•</span> Computer:{' '}
+            <strong>{aiColor === 'w' ? 'White' : 'Black'}</strong>
+          </p>
+        )}
         <p className="muted">
           Game ID: <code>{gameId}</code>
         </p>
@@ -452,7 +458,14 @@ export function GamePage() {
         )}
 
         {mode === 'vsComputer' && aiCtl.isThinking && (
-          <div className="notice" role="status" aria-live="polite" style={{ marginTop: 12 }}>
+          <div
+            className="notice"
+            role="status"
+            aria-live="polite"
+            aria-label="Computer thinking"
+            style={{ marginTop: 12 }}
+          >
+            <span className="spinner" aria-hidden />
             Computer thinking…
           </div>
         )}
@@ -466,7 +479,10 @@ export function GamePage() {
             style={{ marginTop: 12 }}
           >
             {isHintThinking ? (
-              'Calculating hint…'
+              <>
+                <span className="spinner" aria-hidden />
+                Calculating hint…
+              </>
             ) : (
               <>
                 Hint: <strong>{hintText}</strong>

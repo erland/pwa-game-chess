@@ -99,4 +99,30 @@ describe('vs-computer game loop', () => {
     expect(getSideToMove()).toBe('Black');
     expect(getStatusText()).toMatch(/resigned/i);
   });
+
+  it('if the player chooses Black, the computer (White) makes the first move', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+    render(<App />);
+
+    await user.click(screen.getByRole('link', { name: /play → vs computer/i }));
+    expect(screen.getByRole('heading', { name: /vs computer setup/i })).toBeInTheDocument();
+
+    // Choose to play as Black.
+    await user.click(screen.getByRole('radio', { name: /^black$/i }));
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+
+    // White to move initially, so the computer should start thinking immediately.
+    expect(getSideToMove()).toBe('White');
+    expect(screen.getByRole('status', { name: /computer thinking/i })).toBeInTheDocument();
+
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+    });
+
+    // After the computer move, it should be Black (player) to move.
+    expect(getSideToMove()).toBe('Black');
+    expect(screen.queryByRole('status', { name: /computer thinking/i })).not.toBeInTheDocument();
+  });
 });
