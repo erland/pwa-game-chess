@@ -33,6 +33,19 @@ function makeGameId(mode: GameMode): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+
+function parseIntParam(param: string | null): number | null {
+  if (param == null) return null;
+  const n = Number.parseInt(param, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseFloatParam(param: string | null): number | null {
+  if (param == null) return null;
+  const n = Number.parseFloat(param);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function GamePage() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -42,6 +55,9 @@ export function GamePage() {
 
   const playerSideChoice = parseSideChoiceParam(searchParams.get('side')) ?? 'w';
   const difficulty = parseDifficultyParam(searchParams.get('d')) ?? 'easy';
+
+  const customThinkTimeMs = parseIntParam(searchParams.get('tt'));
+  const customRandomness = parseFloatParam(searchParams.get('rn'));
 
   const navigate = useNavigate();
 
@@ -60,7 +76,10 @@ export function GamePage() {
 
   // v2 Step 3: baseline bot implementation.
   const ai: ChessAi | null = useMemo(() => (mode === 'vsComputer' ? new HeuristicBot() : null), [mode]);
-  const aiConfig = useMemo(() => aiConfigFromDifficulty(difficulty), [difficulty]);
+  const aiConfig = useMemo(() => {
+    if (difficulty !== 'custom') return aiConfigFromDifficulty(difficulty);
+    return aiConfigFromDifficulty('custom', undefined, { thinkTimeMs: customThinkTimeMs ?? undefined, randomness: customRandomness ?? undefined });
+  }, [difficulty, customThinkTimeMs, customRandomness]);
 
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createInitialGameState());
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
@@ -244,6 +263,19 @@ export function GamePage() {
                 <dt>Difficulty</dt>
                 <dd>{formatDifficulty(difficulty)}</dd>
               </div>
+
+              {difficulty === 'custom' && (
+                <>
+                  <div>
+                    <dt>Think time</dt>
+                    <dd>{(aiConfig.thinkTimeMs ?? 0) + ' ms'}</dd>
+                  </div>
+                  <div>
+                    <dt>Randomness</dt>
+                    <dd>{Math.round((aiConfig.randomness ?? 0) * 100) + '%'}</dd>
+                  </div>
+                </>
+              )}
             </>
           )}
         </dl>

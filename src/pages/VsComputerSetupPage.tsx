@@ -1,8 +1,10 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   DEFAULT_LOCAL_SETUP,
   TIME_CONTROL_PRESETS,
+  parseOrientationParam,
+  parseTimeControlParam,
   type Orientation,
   type TimeControl,
   serializeTimeControlParam
@@ -11,35 +13,77 @@ import {
   defaultOrientationForSideChoice,
   formatDifficulty,
   formatSideChoice,
+  parseDifficultyParam,
+  parseSideChoiceParam,
   type AiDifficultyPreset,
   type SideChoice
 } from '../domain/vsComputerSetup';
 
-function sameTimeControl(a: TimeControl, b: TimeControl): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === 'none') return true;
+const STORAGE_KEY = 'pwa-chess.vsComputerSetup.v1';
 
-  // At this point `a` is fischer; narrow `b` too.
-  if (b.kind === 'none') return false;
-  return a.initialSeconds === b.initialSeconds && a.incrementSeconds === b.incrementSeconds;
-}
+type StoredVsSetup = {
+  side?: string;
+  d?: string;
+  tc?: string;
+  o?: string;
+  tt?: number;
+  rn?: number;
+};
 
-function presetIdForTimeControl(tc: TimeControl): string | null {
-  const match = TIME_CONTROL_PRESETS.find((p) => sameTimeControl(p.value, tc));
-  return match ? match.id : null;
+function presetIdForTimeControl(tc: TimeControl): string {
+  const match = TIME_CONTROL_PRESETS.find((p) => JSON.stringify(p.value) === JSON.stringify(tc));
+  return match?.id ?? TIME_CONTROL_PRESETS[0].id;
 }
 
 export function VsComputerSetupPage() {
   const navigate = useNavigate();
 
-  // Defaults: mirror local setup defaults for time control and orientation.
-  const [timeControl, setTimeControl] = useState<TimeControl>(DEFAULT_LOCAL_SETUP.timeControl);
+  // Defaults (v1-compatible)
   const [side, setSide] = useState<SideChoice>('w');
   const [difficulty, setDifficulty] = useState<AiDifficultyPreset>('easy');
+  const [timeControl, setTimeControl] = useState<TimeControl>(DEFAULT_LOCAL_SETUP.timeControl);
+  const [orientation, setOrientation] = useState<Orientation>('w');
 
-  // Orientation defaults to the chosen side (white-bottom if player is white), unless the user overrides it.
-  const [orientation, setOrientation] = useState<Orientation>(defaultOrientationForSideChoice(side));
+  // Custom tuning
+  const [customThinkTimeMs, setCustomThinkTimeMs] = useState<number>(300);
+  const [customRandomness, setCustomRandomness] = useState<number>(0.25);
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
+
   const [orientationDirty, setOrientationDirty] = useState(false);
+
+  // Restore last-used settings (optional per plan, but helpful).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed: StoredVsSetup = JSON.parse(raw);
+
+      const parsedSide = parseSideChoiceParam(parsed.side ?? null);
+      const parsedDifficulty = parseDifficultyParam(parsed.d ?? null);
+      const parsedTc = parseTimeControlParam(parsed.tc ?? null);
+      const parsedO = parseOrientationParam(parsed.o ?? null);
+
+      if (parsedSide) setSide(parsedSide);
+      if (parsedDifficulty) setDifficulty(parsedDifficulty);
+
+      if (parsedTc) setTimeControl(parsedTc);
+      if (parsedO) {
+        setOrientation(parsedO);
+        setOrientationDirty(true);
+      } else if (parsedSide) {
+        // If we restored side but not explicit orientation, follow default orientation.
+        setOrientation(defaultOrientationForSideChoice(parsedSide));
+      }
+
+      if (typeof parsed.tt === 'number' && Number.isFinite(parsed.tt)) setCustomThinkTimeMs(clampInt(parsed.tt, 10, 10_000));
+      if (typeof parsed.rn === 'number' && Number.isFinite(parsed.rn)) setCustomRandomness(clampFloat(parsed.rn, 0, 1));
+
+      // If they previously used custom, show advanced by default.
+      if (parsedDifficulty === 'custom') setShowAdvanced(true);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const selectedPresetId = useMemo(() => presetIdForTimeControl(timeControl), [timeControl]);
 
@@ -58,6 +102,26 @@ export function VsComputerSetupPage() {
     params.set('tc', serializeTimeControlParam(timeControl));
     params.set('o', orientation);
 
+    if (difficulty === 'custom') {
+      params.set('tt', String(clampInt(customThinkTimeMs, 10, 10_000)));
+      params.set('rn', String(clampFloat(customRandomness, 0, 1)));
+    }
+
+    // Persist last used setup (optional per plan).
+    const toStore: StoredVsSetup = {
+      side,
+      d: difficulty,
+      tc: serializeTimeControlParam(timeControl),
+      o: orientation,
+      tt: difficulty === 'custom' ? clampInt(customThinkTimeMs, 10, 10_000) : undefined,
+      rn: difficulty === 'custom' ? clampFloat(customRandomness, 0, 1) : undefined
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
+    } catch {
+      // ignore
+    }
+
     navigate(`/vs-computer/game?${params.toString()}`);
   }
 
@@ -71,16 +135,10 @@ export function VsComputerSetupPage() {
           <fieldset className="fieldset">
             <legend>Side</legend>
             <div className="radioGrid">
-              {(['w', 'b', 'r'] as const).map((s) => (
-                <label key={s} className="radioItem">
-                  <input
-                    type="radio"
-                    name="side"
-                    value={s}
-                    checked={side === s}
-                    onChange={() => setSideAndMaybeOrientation(s)}
-                  />
-                  <span>{formatSideChoice(s)}</span>
+              {(['w', 'b', 'r'] as const).map((c) => (
+                <label key={c} className="radioItem">
+                  <input type="radio" name="side" value={c} checked={side === c} onChange={() => setSideAndMaybeOrientation(c)} />
+                  <span>{formatSideChoice(c)}</span>
                 </label>
               ))}
             </div>
@@ -96,12 +154,69 @@ export function VsComputerSetupPage() {
                     name="difficulty"
                     value={d}
                     checked={difficulty === d}
-                    onChange={() => setDifficulty(d)}
+                    onChange={() => {
+                      setDifficulty(d);
+                      if (d === 'custom') setShowAdvanced(true);
+                    }}
                   />
                   <span>{formatDifficulty(d)}</span>
                 </label>
               ))}
             </div>
+
+            {difficulty !== 'custom' && (
+              <p className="muted" style={{ marginTop: 8 }}>
+                Presets control how long the computer thinks and how “risky” its choices are. Choose <strong>Custom</strong> for
+                advanced tuning.
+              </p>
+            )}
+
+            {difficulty === 'custom' && (
+              <div className="stack" style={{ marginTop: 12 }}>
+                <label className="radioItem" style={{ alignItems: 'center' }}>
+                  <input type="checkbox" checked={showAdvanced} onChange={(e) => setShowAdvanced(e.currentTarget.checked)} />
+                  <span>Advanced settings</span>
+                </label>
+
+                {showAdvanced && (
+                  <div className="stack" style={{ gap: 10 }}>
+                    <div className="stack" style={{ gap: 6 }}>
+                      <label>
+                        Think time: <strong>{clampInt(customThinkTimeMs, 10, 10_000)} ms</strong>
+                      </label>
+                      <input
+                        type="range"
+                        min={50}
+                        max={1200}
+                        step={25}
+                        value={customThinkTimeMs}
+                        onChange={(e) => setCustomThinkTimeMs(Number(e.currentTarget.value))}
+                      />
+                      <p className="muted" style={{ marginTop: 0 }}>
+                        Higher values make the computer wait longer (and can improve move quality on harder configs).
+                      </p>
+                    </div>
+
+                    <div className="stack" style={{ gap: 6 }}>
+                      <label>
+                        Randomness: <strong>{Math.round(clampFloat(customRandomness, 0, 1) * 100)}%</strong>
+                      </label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={Math.round(customRandomness * 100)}
+                        onChange={(e) => setCustomRandomness(Number(e.currentTarget.value) / 100)}
+                      />
+                      <p className="muted" style={{ marginTop: 0 }}>
+                        Higher randomness makes the computer explore more and play less “optimal”.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </fieldset>
 
           <fieldset className="fieldset">
@@ -125,45 +240,29 @@ export function VsComputerSetupPage() {
           <fieldset className="fieldset">
             <legend>Orientation</legend>
             <div className="radioGrid">
-              <label className="radioItem">
-                <input
-                  type="radio"
-                  name="orientation"
-                  value="w"
-                  checked={orientation === 'w'}
-                  onChange={() => {
-                    setOrientation('w');
-                    setOrientationDirty(true);
-                  }}
-                />
-                <span>White at bottom</span>
-              </label>
-              <label className="radioItem">
-                <input
-                  type="radio"
-                  name="orientation"
-                  value="b"
-                  checked={orientation === 'b'}
-                  onChange={() => {
-                    setOrientation('b');
-                    setOrientationDirty(true);
-                  }}
-                />
-                <span>Black at bottom</span>
-              </label>
+              {(['w', 'b'] as const).map((o) => (
+                <label key={o} className="radioItem">
+                  <input
+                    type="radio"
+                    name="orientation"
+                    value={o}
+                    checked={orientation === o}
+                    onChange={() => {
+                      setOrientation(o);
+                      setOrientationDirty(true);
+                    }}
+                  />
+                  <span>{o === 'w' ? 'White at bottom' : 'Black at bottom'}</span>
+                </label>
+              ))}
             </div>
-            {!orientationDirty && (
-              <p className="muted" style={{ marginTop: 8 }}>
-                Orientation follows your chosen side. Change it here to override.
-              </p>
-            )}
           </fieldset>
 
           <div className="actions">
-            <button type="submit" className="btn btn-primary">
+            <button className="btn btn-primary" type="submit">
               Start game
             </button>
-            <Link to="/" className="btn">
+            <Link className="btn btn-secondary" to="/">
               Cancel
             </Link>
           </div>
@@ -179,4 +278,14 @@ export function VsComputerSetupPage() {
       </div>
     </section>
   );
+}
+
+function clampInt(v: number, min: number, max: number): number {
+  const n = Math.round(v);
+  return Math.min(max, Math.max(min, n));
+}
+
+function clampFloat(v: number, min: number, max: number): number {
+  if (!Number.isFinite(v)) return min;
+  return Math.min(max, Math.max(min, v));
 }
