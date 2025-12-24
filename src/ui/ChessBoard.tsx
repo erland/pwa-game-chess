@@ -192,6 +192,7 @@ export function ChessBoard({
                 className={className}
                 aria-label={squareAriaLabel(state, sq)}
                 onClick={() => {
+                  if (disabled) return;
                   // If a drag occurred, the browser will still fire a click on pointer-up.
                   // Suppress it so we don't toggle selection or re-attempt moves.
                   if (suppressClickRef.current) {
@@ -250,6 +251,17 @@ export function ChessBoard({
                 onPointerUp={(e) => {
                   if (!dragging) return;
                   if (dragging.origin !== sq) return;
+
+                  if (disabled) {
+                    setDragging(null);
+                    suppressClickRef.current = false;
+                    return;
+                  }
+
+                  if (disabled) {
+                    setDragging(null);
+                    return;
+                  }
 
                   // Not a drag (tap / click). Let the normal onClick handler run.
                   if (!dragging.isDragging) {

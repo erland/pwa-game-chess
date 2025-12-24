@@ -1,9 +1,10 @@
 import type { Color } from './chessTypes';
 import type { Orientation, TimeControl } from './localSetup';
+import type { AiDifficulty } from './ai/types';
 
 export type SideChoice = Color | 'r'; // 'r' = random
 
-export type AiDifficultyPreset = 'easy' | 'medium' | 'hard' | 'custom';
+export type AiDifficultyPreset = AiDifficulty;
 
 export type VsComputerSetup = {
   side: SideChoice;

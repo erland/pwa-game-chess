@@ -7,6 +7,7 @@ import {
   parseTimeControlParam
 } from '../domain/localSetup';
 import type { Move, Square } from '../domain/chessTypes';
+import type { Color } from '../domain/chessTypes';
 import { parseGameModeParam, type GameMode } from '../domain/gameMode';
 import { formatDifficulty, formatSideChoice, parseDifficultyParam, parseSideChoiceParam } from '../domain/vsComputerSetup';
 import { createInitialGameState } from '../domain/gameState';
@@ -14,6 +15,7 @@ import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
 import { generatePseudoLegalMoves } from '../domain/movegen';
 import { gameReducer } from '../domain/reducer';
+import { oppositeColor } from '../domain/chessTypes';
 import { ChessBoard } from '../ui/ChessBoard';
 import { PromotionChooser } from '../ui/PromotionChooser';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -21,6 +23,8 @@ import { ResultDialog } from '../ui/ResultDialog';
 import { useDerivedGameView } from './game/useDerivedGameView';
 import { useLocalClocks, formatClockMs } from './game/useLocalClocks';
 import { useToastNotice } from './game/useToastNotice';
+import { useAiController } from './game/useAiController';
+import type { AiConfig, ChessAi } from '../domain/ai/types';
 
 function makeGameId(mode: GameMode): string {
   const prefix = mode === 'local' ? 'local' : 'vs';
@@ -43,6 +47,18 @@ export function GamePage() {
   const orientation = parseOrientationParam(searchParams.get('o'));
 
   const gameId = useMemo(() => makeGameId(mode), [mode]);
+
+  // In vs-computer mode, the player may choose "Random"; resolve it once per page mount.
+  const playerColor: Color = useMemo(() => {
+    if (playerSideChoice === 'r') return Math.random() < 0.5 ? 'w' : 'b';
+    return playerSideChoice;
+  }, [playerSideChoice, gameId]);
+
+  const aiColor: Color = useMemo(() => oppositeColor(playerColor), [playerColor]);
+
+  // v2 Step 2 introduces the AI boundary. A concrete AI is plugged in during later steps.
+  const ai: ChessAi | null = null;
+  const aiConfig: AiConfig = useMemo(() => ({ difficulty }), [difficulty]);
 
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createInitialGameState());
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
@@ -73,6 +89,24 @@ export function GamePage() {
     isGameOver,
     dispatch
   );
+
+  // v2 Step 2: AI boundary + orchestration hook.
+  // Note: actual AI implementation is introduced in later steps (v2 Step 3+).
+  const aiCtl = useAiController({
+    enabled: mode === 'vsComputer' && Boolean(ai),
+    state,
+    isGameOver,
+    aiColor,
+    ai,
+    config: aiConfig,
+    onApplyMove: (move) => {
+      dispatch({ type: 'applyMove', move });
+      setSelectedSquare(null);
+      setPendingPromotion(null);
+      setConfirm(null);
+    },
+    onError: (msg) => showNotice(msg)
+  });
 
   // Close in-progress input dialogs if the game ends (mate/draw/resign).
   useEffect(() => {
@@ -124,6 +158,7 @@ export function GamePage() {
 
   function handleSquareClick(square: Square) {
     if (isGameOver) return;
+    if (aiCtl.isThinking) return;
     if (pendingPromotion) return;
     if (confirm) return;
 
@@ -165,6 +200,7 @@ export function GamePage() {
 
   function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
     if (isGameOver) return;
+    if (aiCtl.isThinking) return;
     if (pendingPromotion) return;
     if (confirm) return;
     // Drag-drop is allowed even if selection is out of sync.
@@ -211,6 +247,12 @@ export function GamePage() {
         {mode === 'vsComputer' && (
           <div className="notice" role="note" style={{ marginTop: 12 }}>
             <strong>Note:</strong> Vs-computer AI is wired up in later v2 steps. For now you can play both sides.
+          </div>
+        )}
+
+        {mode === 'vsComputer' && aiCtl.isThinking && (
+          <div className="notice" role="status" aria-live="polite" style={{ marginTop: 12 }}>
+            Computer thinking…
           </div>
         )}
 
@@ -320,7 +362,7 @@ export function GamePage() {
           checkSquares={checkSquares}
           onSquareClick={handleSquareClick}
           onMoveAttempt={handleMoveAttempt}
-          disabled={isGameOver || Boolean(pendingPromotion) || Boolean(confirm)}
+          disabled={isGameOver || Boolean(pendingPromotion) || Boolean(confirm) || aiCtl.isThinking}
         />
         {noticeText && (
           <div className="toast" role="status" aria-live="polite">
