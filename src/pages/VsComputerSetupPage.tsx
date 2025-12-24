@@ -173,8 +173,8 @@ export function VsComputerSetupPage() {
       <div className="card">
         <h3 className="h3">Note</h3>
         <p className="muted">
-          In v2 Step 1 we only add the entry point and setup flow. The AI move logic is implemented in later steps — for
-          now the game starts like a normal local game.
+          This version uses a simple built-in bot (no external engine). Later v2 steps can make the AI stronger and/or
+          move it into a Web Worker.
         </p>
       </div>
     </section>
