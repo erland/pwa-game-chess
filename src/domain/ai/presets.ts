@@ -20,7 +20,9 @@ export function aiConfigFromDifficulty(
       : difficulty === 'medium'
         ? { difficulty, thinkTimeMs: 260, maxDepth: 1, randomness: 0.35, seed }
         : difficulty === 'hard'
-          ? { difficulty, thinkTimeMs: 850, maxDepth: 2, randomness: 0.06, seed }
+          // "Hard" is intended to be used by the strong engine adapter (Step 7),
+          // so it gets a deeper default depth than the baseline heuristic bot.
+          ? { difficulty, thinkTimeMs: 850, maxDepth: 4, randomness: 0.06, seed }
           : { difficulty, thinkTimeMs: 300, maxDepth: 1, randomness: 0.25, seed };
 
   // Only apply overrides for Custom (to preserve the meaning of presets).

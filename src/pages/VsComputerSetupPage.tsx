@@ -28,6 +28,7 @@ type StoredVsSetup = {
   o?: string;
   tt?: number;
   rn?: number;
+  md?: number;
 };
 
 function presetIdForTimeControl(tc: TimeControl): string {
@@ -47,6 +48,7 @@ export function VsComputerSetupPage() {
   // Custom tuning
   const [customThinkTimeMs, setCustomThinkTimeMs] = useState<number>(300);
   const [customRandomness, setCustomRandomness] = useState<number>(0.25);
+  const [customMaxDepth, setCustomMaxDepth] = useState<number>(3);
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
   const [orientationDirty, setOrientationDirty] = useState(false);
@@ -77,6 +79,7 @@ export function VsComputerSetupPage() {
 
       if (typeof parsed.tt === 'number' && Number.isFinite(parsed.tt)) setCustomThinkTimeMs(clampInt(parsed.tt, 10, 10_000));
       if (typeof parsed.rn === 'number' && Number.isFinite(parsed.rn)) setCustomRandomness(clampFloat(parsed.rn, 0, 1));
+      if (typeof parsed.md === 'number' && Number.isFinite(parsed.md)) setCustomMaxDepth(clampInt(parsed.md, 1, 6));
 
       // If they previously used custom, show advanced by default.
       if (parsedDifficulty === 'custom') setShowAdvanced(true);
@@ -105,6 +108,7 @@ export function VsComputerSetupPage() {
     if (difficulty === 'custom') {
       params.set('tt', String(clampInt(customThinkTimeMs, 10, 10_000)));
       params.set('rn', String(clampFloat(customRandomness, 0, 1)));
+      params.set('md', String(clampInt(customMaxDepth, 1, 6)));
     }
 
     // Persist last used setup (optional per plan).
@@ -114,7 +118,8 @@ export function VsComputerSetupPage() {
       tc: serializeTimeControlParam(timeControl),
       o: orientation,
       tt: difficulty === 'custom' ? clampInt(customThinkTimeMs, 10, 10_000) : undefined,
-      rn: difficulty === 'custom' ? clampFloat(customRandomness, 0, 1) : undefined
+      rn: difficulty === 'custom' ? clampFloat(customRandomness, 0, 1) : undefined,
+      md: difficulty === 'custom' ? clampInt(customMaxDepth, 1, 6) : undefined
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
@@ -211,6 +216,23 @@ export function VsComputerSetupPage() {
                       />
                       <p className="muted" style={{ marginTop: 0 }}>
                         Higher randomness makes the computer explore more and play less “optimal”.
+                      </p>
+                    </div>
+
+                    <div className="stack" style={{ gap: 6 }}>
+                      <label>
+                        Search depth: <strong>{clampInt(customMaxDepth, 1, 6)}</strong>
+                      </label>
+                      <input
+                        type="range"
+                        min={1}
+                        max={6}
+                        step={1}
+                        value={clampInt(customMaxDepth, 1, 6)}
+                        onChange={(e) => setCustomMaxDepth(Number(e.currentTarget.value))}
+                      />
+                      <p className="muted" style={{ marginTop: 0 }}>
+                        Higher depth can make the computer stronger, but costs more CPU time. Prefer using a higher think time too.
                       </p>
                     </div>
                   </div>

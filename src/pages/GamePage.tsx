@@ -27,6 +27,8 @@ import { useAiController } from './game/useAiController';
 import type { ChessAi } from '../domain/ai/types';
 import { aiConfigFromDifficulty } from '../domain/ai/presets';
 import { HeuristicBot } from '../domain/ai/heuristicBot';
+import { StrongEngineBot } from '../domain/ai/strongEngineBot';
+import { WorkerEngineAi, isWorkerEngineSupported } from './game/workerEngineAi';
 import { toAlgebraic } from '../domain/square';
 
 function makeGameId(mode: GameMode): string {
@@ -80,6 +82,7 @@ export function GamePage() {
 
   const customThinkTimeMs = parseIntParam(searchParams.get('tt'));
   const customRandomness = parseFloatParam(searchParams.get('rn'));
+  const customMaxDepth = parseIntParam(searchParams.get('md'));
 
   const navigate = useNavigate();
 
@@ -96,12 +99,35 @@ export function GamePage() {
 
   const aiColor: Color = useMemo(() => oppositeColor(playerColor), [playerColor]);
 
-  // v2 Step 3: baseline bot implementation.
-  const ai: ChessAi | null = useMemo(() => (mode === 'vsComputer' ? new HeuristicBot() : null), [mode]);
   const aiConfig = useMemo(() => {
     if (difficulty !== 'custom') return aiConfigFromDifficulty(difficulty);
-    return aiConfigFromDifficulty('custom', undefined, { thinkTimeMs: customThinkTimeMs ?? undefined, randomness: customRandomness ?? undefined });
-  }, [difficulty, customThinkTimeMs, customRandomness]);
+    return aiConfigFromDifficulty('custom', undefined, {
+      thinkTimeMs: customThinkTimeMs ?? undefined,
+      randomness: customRandomness ?? undefined,
+      maxDepth: customMaxDepth ?? undefined
+    });
+  }, [difficulty, customThinkTimeMs, customRandomness, customMaxDepth]);
+
+  // v2 Step 7: choose AI implementation.
+  // - Easy/Medium: baseline heuristic bot (fast, no worker required).
+  // - Hard/Custom (with deeper depth): prefer WorkerEngineAi, fallback to StrongEngineBot.
+  const ai: ChessAi | null = useMemo(() => {
+    if (mode !== 'vsComputer') return null;
+
+    const wantsStrong = difficulty === 'hard' || (difficulty === 'custom' && (aiConfig.maxDepth ?? 1) >= 3);
+    if (!wantsStrong) return new HeuristicBot();
+
+    if (isWorkerEngineSupported()) return new WorkerEngineAi();
+    return new StrongEngineBot();
+  }, [mode, difficulty, aiConfig.maxDepth]);
+
+  // Ensure we init/dispose AI implementations that need lifecycle.
+  useEffect(() => {
+    void ai?.init?.();
+    return () => {
+      void ai?.dispose?.();
+    };
+  }, [ai]);
 
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createInitialGameState());
   const stateRef = useRef(state);
@@ -272,7 +298,8 @@ export function GamePage() {
     setHintText(null);
 
     try {
-      const res = await (ai ?? new HeuristicBot()).getMove(
+      // Hints should be quick and deterministic; use the baseline bot to avoid heavy computation.
+      const res = await new HeuristicBot().getMove(
         {
           state: snapshot,
           aiColor: snapshotSideToMove,
@@ -407,6 +434,10 @@ export function GamePage() {
                   <div>
                     <dt>Randomness</dt>
                     <dd>{Math.round((aiConfig.randomness ?? 0) * 100) + '%'}</dd>
+                  </div>
+                  <div>
+                    <dt>Search depth</dt>
+                    <dd>{aiConfig.maxDepth ?? 1}</dd>
                   </div>
                 </>
               )}
