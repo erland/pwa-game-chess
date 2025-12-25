@@ -1,285 +1,256 @@
-# Development plan (v4) — Review a finished game (User Journey 6.4)
+# Development plan (v4) — Play online (real-time) (User Journey 6.3)
 Repository: **pwa-game-chess**  
-Prerequisite: **v1 (Local)**, **v2 (vs Computer)**, and **v3 (Online real-time)** are implemented and stable.
+Prerequisite: **v1 (Local)**, **v2 (vs Computer)**, and **v3 (Review + History, backend-free)** are implemented and stable.
 
-This is **Version 4** of the development plan. It adds **game review** for finished games (and optionally in-progress games),
-including move navigation, metadata, and import/export primitives that are useful for sharing and analysis.
+This rewritten **Version 4** plan focuses on delivering **6.3 Play online (real-time)**. It assumes v3 already provides:
+- a unified `GameRecord` / move log model
+- history UI + review UI
+- PGN/FEN export/import
+
+Online play will reuse those primitives so finished online games automatically appear in **History** and open in **Review**.
 
 ---
 
-## Scope of v4
-Implement **User Journey 6.4 — Review a finished game**:
+## Scope of v4 (maps to specification 6.3 + FR-080…FR-085)
+Implement **User Journey 6.3 — Play online (real-time)**:
 
-1. User opens **History**
-2. User selects a finished game
-3. User can:
-   - step forward/back
-   - jump to any move
-   - see captured pieces (optional)
-   - copy/export **PGN**
-   - copy/export **FEN** at any move
-4. User can share a link (for online games) or share/export a file (for local/vs-computer)
+1. User selects **Play → Online**
+2. User selects time control and matchmaking type (ranked/unranked; ranked may be stubbed initially)
+3. System finds an opponent and starts the game
+4. Moves are synchronized reliably in real time and clocks stay consistent
+5. System records result and stores the game so it can be reviewed via v3
 
 ### Non-goals for v4 (deferred)
-- Engine evaluation lines, blunder detection, opening explorer (future)
-- Puzzle extraction / tactics trainer from games (future)
-- Social features (comments, likes) (future)
+- Ratings/leaderboards/tournaments (can be v4.1+)
+- Chat/friends/moderation (optional later)
+- Deep anti-cheat (basic safety only)
 
 ---
 
-## Key design constraints (so review stays consistent)
-- Review must be **deterministic**:
-  - Replaying the move list from the recorded start position must always reach the same positions.
-- Prefer storing or reconstructing **canonical move data**:
-  - `from`, `to`, `promotion` (and optionally flags like castling/en-passant)
-- SAN/PGN generation should be:
-  - correct enough for standard interchange
-  - but isolated so improvements don’t affect the core game engine
+## Architectural approach
+### Core principle: **server-authoritative match state**
+- Clients submit a **move intent**.
+- Server validates legality and commits the move.
+- Server owns the official clocks + game termination (timeout, resign, draw).
+
+### Compatibility with v3 review/history
+Online storage should naturally map to v3’s `GameRecord`:
+- store an **append-only move log**
+- store final result + termination reason
+- store minimal metadata (players, time control, timestamps)
+So the client can fetch a finished match and open it using the existing v3 ReviewPage.
 
 ---
 
-## What data v4 assumes is already available (from v1–v3)
-### Local/vs-computer games (v1/v2)
-- Game records in local storage (or IndexedDB) with:
-  - `gameId`, `mode`, players, timeControl, startedAt/finishedAt
-  - `moves[]` with at least `{from,to,promotion?}`
-  - `result` + `terminationReason`
-  - **starting position** (assume standard start in v1; allow custom in future)
-
-### Online games (v3)
-- Match records backend-side with:
-  - `match_moves` append-only log
-  - final `result` and `terminationReason`
-  - player identities + timeControl
-- Client can fetch finished matches and their moves
-
-If any of these are missing in your implementation, v4 Step 1 includes a “data readiness” patch.
+## Backend requirement (reality check)
+GitHub Pages is static hosting, so **real-time online play requires an external backend** (WebSocket/realtime DB + auth + persistence).
+This plan is backend-agnostic:
+- Supabase, Firebase, Cloudflare Durable Objects, a small Node WebSocket server, etc.
+The key is preserving the same interfaces and data contracts.
 
 ---
 
-## Steps (each step is realistic to implement in one prompt)
+## Minimal online data model (conceptual)
+- `matches`: id, status (waiting/active/finished), timeControl, createdAt, startedAt, finishedAt
+- `match_players`: matchId, userId, color, joinedAt
+- `match_state`: matchId, authoritativeState (or FEN), revision, clocks, lastMoveAt
+- `match_moves`: matchId, ply, move (from/to/promo), serverTimestamp, optional resultingFen
+- `users`: id, handle/displayName
 
-### Step 1 — Data readiness + unified “GameRecord” model
-**Goal:** Ensure review works uniformly across local, vs-computer, and online games.
+Keep `match_moves` even if you store the latest state; it enables:
+- deterministic replay (v3)
+- desync recovery
+- auditability
+
+---
+
+## Steps (each step is realistic to implement in one sweep)
+
+### Step 1 — Online mode entry + client API boundaries
+**Goal:** Add Online as a first-class mode without breaking v1–v3.
 
 **Deliverables**
-- Define a unified domain DTO:
-  - `GameRecord` (id, mode, players, timeControl, startedAt, finishedAt, result, terminationReason, moves)
-- Ensure v1/v2 persistence includes:
-  - finished games list
-  - moves list
-  - minimal metadata
-- Ensure v3 online fetch can map backend match+move rows into `GameRecord`
+- Add `GameMode = 'local' | 'vsComputer' | 'online'`
+- Add `OnlineSetupPage`:
+  - time control presets
+  - queue type: **Unranked** (ranked can be “coming later”)
+- Add a client “online API” module (interface-first):
+  - `requestMatch(timeControl, queueType)`
+  - `subscribe(matchId, onUpdate)`
+  - `submitMove(matchId, move, revision)`
+  - `resign(matchId)`
+  - `offerDraw(matchId)` / `respondDraw(matchId, accept)`
 
 **How to test**
-- Unit tests mapping online payload → `GameRecord`
-- Manual: play a local game, finish it, verify record is saved
+- App navigation works and online setup page renders
 
 ---
 
-### Step 2 — History screen (list + filters)
-**Goal:** Provide the entry point to journey 6.4.
+### Step 2 — Authentication (minimal viable)
+**Goal:** Online play needs identity; local/vs-computer should remain guest-friendly.
 
 **Deliverables**
-- `HistoryPage`:
-  - list of finished games sorted by date (newest first)
-  - displays: opponent (or “Local”), mode, time control, result, date/time
-  - basic filters:
-    - Mode: All / Local / vs Computer / Online
-    - Result: All / Win / Loss / Draw
-  - actions:
-    - open review
-    - delete local records (local/vs-computer only; online deletion optional and likely disabled)
-- Routes:
-  - `/history`
-  - `/review/:gameId`
+- Auth screens (sign in/up/out)
+- Route guard:
+  - Online mode requires auth
+  - Local/vs-computer/history/review remain available offline
 
 **How to test**
-- Component test: list renders and filters
-- Manual: open a record → navigates to review
+- Unauthenticated user entering Online is redirected to login
 
 ---
 
-### Step 3 — Review state engine (replay + navigation)
-**Goal:** Create the deterministic “replay engine” that powers the UI.
+### Step 3 — Matchmaking queue → match creation
+**Goal:** Two players joining the same queue get paired.
 
 **Deliverables**
-- `ReviewSession` state:
-  - `record: GameRecord`
-  - `index: number` (0 = start position, 1..n = after move i)
-  - `positions[]` cache (optional but recommended)
-- Functions:
-  - `buildPositions(record)`:
-    - start from initial state
-    - apply each move using domain `applyMove`
-    - store intermediate positions (or store FENs)
-  - `goTo(index)`, `next()`, `prev()`
-  - `getFenAt(index)`
-- Robustness:
-  - if a move replay fails (should not happen), show a clear error and which move is invalid
+- Backend queue logic:
+  - join queue for (timeControl, queueType)
+  - pair two waiting users → create match + assign colors
+- Client UX:
+  - “Searching for opponent…”
+  - Cancel search
 
 **How to test**
-- Unit test: replay a known move list produces expected final state
-- Unit test: goTo/next/prev boundaries
+- Two browser sessions join queue → both receive match id and opponent
 
 ---
 
-### Step 4 — Review UI: board + move list + navigation controls
-**Goal:** Provide the actual review experience.
+### Step 4 — Server-authoritative move validation + commit
+**Goal:** Prevent illegal moves and keep clients in sync deterministically.
 
 **Deliverables**
-- `ReviewPage` layout:
-  - board (reuse `ChessBoard` component)
-  - move list (notation list, initially can be coordinate notation like `e2-e4`)
-  - navigation controls:
-    - ⏮ start, ◀ prev, ▶ next, ⏭ end
-  - display:
-    - current move number / ply
-    - side to move indicator at current index
-    - last move highlight
-- “Jump to move”:
-  - tapping a move in the list sets the review index
+- Backend move commit endpoint:
+  - load authoritative match state
+  - verify caller is a participant + correct side-to-move
+  - validate move legality using the same chess rules logic (or an equivalent server implementation)
+  - apply move → update state + append to match_moves
+  - increment `revision`
+  - broadcast update to both clients
+- Client behavior:
+  - apply server updates as the source of truth
+  - if optimistic UI is used, reconcile on server update/rejection
 
 **How to test**
-- Component test: clicking a move jumps board position
-- Manual: scrub through moves and verify board updates
+- Illegal move is rejected; both clients remain consistent
+- Legal move appears on both clients in real time
 
 ---
 
-### Step 5 — Captured pieces + clocks (optional but valuable)
-**Goal:** Add common review UX features without impacting core architecture.
+### Step 5 — Authoritative clocks (time controls + increment)
+**Goal:** Ensure clocks are consistent and not client-cheatable.
 
 **Deliverables**
-- Captured pieces view:
-  - derived by comparing start pieces vs current position, or tracked during replay
-- Clock display in review (if time data exists):
-  - For local/vs-computer: if per-move timestamps were recorded, show remaining time per move (optional)
-  - For online: show server-authoritative clock values per move (if stored)  
-  *(If time-per-move was not stored previously, you can display only final clocks or omit in v4.)*
+- Server stores:
+  - `whiteRemainingMs`, `blackRemainingMs`, `activeColor`, `lastMoveAt`
+- On move commit:
+  - subtract elapsed time since `lastMoveAt` from active side
+  - apply increment to the mover (if applicable)
+  - switch activeColor, update `lastMoveAt`
+- Timeout result is decided on server and broadcast.
 
 **How to test**
-- Unit tests: captured piece derivation
-- Manual: captured pieces update as you navigate
+- Very short time control triggers timeout and both clients end consistently
 
 ---
 
-### Step 6 — SAN generation (for display) + PGN export
-**Goal:** Produce good interoperability and a nicer move list.
+### Step 6 — Reconnection + desync recovery
+**Goal:** Online games survive refresh/network loss (FR-083).
 
 **Deliverables**
-- SAN generator module in `src/domain/notation/`:
-  - `toSAN(stateBeforeMove, move, stateAfterMove)`:
-    - piece letter (blank for pawn)
-    - capture marker `x`
-    - disambiguation when needed
-    - check `+` / mate `#`
-    - castling `O-O` / `O-O-O`
-    - promotion `=Q` etc.
-- PGN exporter:
-  - headers: Event, Site, Date, White, Black, Result, TimeControl (if present)
-  - move text using SAN, wrapped reasonably
-- UI:
-  - move list shows SAN
-  - “Copy PGN” button
-  - “Download PGN” button (as `.pgn` file)
+- On game load:
+  - fetch latest match state + subscribe to updates
+- Reconnect UX banner (“Reconnecting…”)
+- Revision gap handling:
+  - if client detects missed revisions → refetch latest state
 
 **How to test**
-- Unit tests for SAN edge cases:
-  - castling, promotion, capture, check/mate markers
-  - ambiguous moves requiring disambiguation
-- Roundtrip test ready for future (v4.1):
-  - export PGN then re-import yields same moves (can be introduced in Step 7)
+- Refresh one client mid-game → it resumes with correct clocks and position
 
 ---
 
-### Step 7 — FEN export (any move) + basic PGN import (optional but recommended)
-**Goal:** Make review and sharing practical.
+### Step 7 — Online controls: resign + draw offer + end-of-match
+**Goal:** Finish games cleanly (FR-004/FR-005/FR-084).
 
 **Deliverables**
-- “Copy FEN” button that copies the FEN at the current index
-- Optional “Import” entry point:
-  - paste PGN → parse moves → create a temporary `GameRecord` for review
-  - show parse errors with helpful context
-- Basic PGN parser:
-  - support headers and SAN move list for common cases
-  - ignore comments/variations initially (can improve later)
+- Resign endpoint → marks match finished and broadcasts result
+- Draw offer state + accept/decline flow
+- End screen shows:
+  - result (win/loss/draw) + reason (mate/stalemate/resign/draw/timeout)
 
 **How to test**
-- Unit test: current FEN changes when navigating
-- Import test: known PGN loads and replays without errors
+- Resign ends match for both clients
+- Draw accepted ends match for both clients
 
 ---
 
-### Step 8 — Online sharing link + deep-link review
-**Goal:** For online matches, share a link that opens the same review.
+### Step 8 — Store finished online games and surface in History/Review (v3 reuse)
+**Goal:** Online games become reviewable using the already-built v3 features.
 
 **Deliverables**
-- Share link format (example):
-  - `/review/online/:matchId`
-- Review page can load:
-  - local record by `gameId`
-  - or online record by `matchId` (fetch match + moves)
-- “Share” button for online games:
-  - uses Web Share API when available
-  - fallback: copy URL
+- Backend marks match finished + preserves `match_moves`
+- Client “History” integrates:
+  - fetch finished matches
+  - map to `GameRecord` and list alongside local games
+- Opening an online history item launches the existing `ReviewPage` (v3) by loading match + moves.
 
 **How to test**
-- Manual: open shared link in a new browser session → review loads correctly
+- Finish an online match → it appears in History → Review works with move navigation + PGN/FEN export
 
 ---
 
-### Step 9 — UX polish + accessibility + regression safety
-**Goal:** Make review feel like a finished feature and keep earlier versions stable.
+### Step 9 — Security + abuse prevention (basic)
+**Goal:** Reduce obvious abuse and improve reliability.
 
 **Deliverables**
-- Responsive layout:
-  - board + move list side-by-side on large screens
-  - move list in drawer/tab on small screens
-- Accessibility:
-  - keyboard shortcuts: left/right arrows for prev/next, home/end for start/end
-  - screen-reader labels for navigation buttons
-- CI:
-  - add review smoke tests
-  - ensure v1/v2/v3 flows still pass
+- Authorization checks:
+  - only match participants can submit moves
+- Basic throttling/rate limiting
+- Logging for:
+  - rejected moves, revision mismatches, unexpected errors
 
 **How to test**
-- `npm test` passes
-- Manual: review works on phone/tablet/desktop
+- Non-participant cannot submit moves; spam submissions are throttled
 
 ---
 
-## Acceptance tests (examples for v4)
-- **AT4-001** History lists finished local, vs-computer, and online games (as available).
-- **AT4-002** Opening a finished game shows a board at the starting position.
-- **AT4-003** Next/prev/jump updates board deterministically and matches the move list.
-- **AT4-004** “Copy FEN” copies the correct FEN for the current position.
-- **AT4-005** “Copy/Download PGN” outputs a valid PGN with headers and SAN moves.
-- **AT4-006** Online shared link opens and loads the same match review.
+### Step 10 — CI + local dev workflow for online module
+**Goal:** Keep v4 maintainable and prevent regressions.
+
+**Deliverables**
+- Backend unit tests:
+  - move commit legality + clocks
+- Client tests:
+  - online flow smoke tests (mock backend)
+- Local dev instructions for environment variables and running backend locally (or pointing to a dev instance)
+
+**How to test**
+- `npm test` + `npm run build` pass in CI
+- App deploys to GitHub Pages without secrets leakage
+
+---
+
+## Acceptance tests (examples)
+- **AT4-001** Two logged-in users join the same queue and are matched.
+- **AT4-002** A committed move appears on both clients in real time; illegal moves are rejected.
+- **AT4-003** Clocks are server-authoritative and timeouts end the match consistently.
+- **AT4-004** Refresh/reconnect restores state and clocks correctly.
+- **AT4-005** Finished online games appear in History and open in Review with full navigation + export.
 
 ---
 
 ## Suggested folder additions
 ```
 src/
-  domain/
-    notation/
-      san.ts
-      pgnExport.ts
-      pgnImport.ts          (optional)
-    review/
-      replay.ts
-      types.ts
+  app/
+    auth/
+    api/
+      onlineClient.ts
   pages/
-    HistoryPage.tsx
-    ReviewPage.tsx
+    OnlineSetupPage.tsx
+    MatchmakingPage.tsx
+    OnlineGamePage.tsx
+  domain/
+    online/
+      types.ts
 ```
-
----
-
-## Notes (future improvements beyond v4)
-- Engine analysis (best lines, eval bar)
-- Blunder/mistake detection (compare user move vs engine best)
-- Opening names + explorer
-- Annotated PGN with comments and variations
-- Puzzle extraction from tactics moments
-
