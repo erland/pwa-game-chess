@@ -41,6 +41,8 @@ describe('Local game controls (Step 10)', () => {
 
     expect(screen.queryByRole('dialog', { name: /game result/i })).not.toBeInTheDocument();
     // New game should start with white to move.
-    expect(screen.getByText(/^White$/)).toBeInTheDocument();
+    const sideToMove = screen.getByText(/side to move/i).closest('div');
+    expect(sideToMove).not.toBeNull();
+    expect(within(sideToMove as HTMLElement).getByText(/^White$/i)).toBeInTheDocument();
   });
 });

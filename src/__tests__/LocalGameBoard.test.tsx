@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
 
@@ -31,6 +31,8 @@ describe('Local game board', () => {
     expect(e4After).toHaveClass('boardSq-lastTo');
 
     // Side to move flips.
-    expect(screen.getByText(/black/i)).toBeInTheDocument();
+    const sideToMove = screen.getByText(/side to move/i).closest('div');
+    expect(sideToMove).not.toBeNull();
+    expect(within(sideToMove as HTMLElement).getByText(/^Black$/i)).toBeInTheDocument();
   });
 });

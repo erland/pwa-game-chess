@@ -619,3 +619,54 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* v3 Step 5: Captured pieces */
+.capturedPanel {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.capturedRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.capturedLabel {
+  width: 56px;
+  font-weight: 600;
+}
+
+.capturedPieces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 22px;
+}
+
+.capturedItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.capturedGlyph {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.capturedCount {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.capturedDelta {
+  margin-left: auto;
+  font-weight: 700;
+}

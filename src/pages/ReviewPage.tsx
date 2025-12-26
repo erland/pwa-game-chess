@@ -10,7 +10,9 @@ import { toAlgebraic } from '../domain/square';
 import { findKing, isInCheck } from '../domain/attack';
 
 import { getGame } from '../storage/gamesDb';
+import { getCapturedPiecesFromState } from '../domain/material/captured';
 import { ChessBoard } from '../ui/ChessBoard';
+import { CapturedPiecesPanel } from '../ui/CapturedPiecesPanel';
 import type { ReplayResult } from '../domain/review/replay';
 import { replayGameRecord } from '../domain/review/replay';
 
@@ -109,6 +111,7 @@ export function ReviewPage() {
   }, [ready, maxPly]);
 
   const frame = ready ? ready.replay.frames[Math.max(0, Math.min(ply, maxPly))] : null;
+  const capturedPieces = useMemo(() => (frame ? getCapturedPiecesFromState(frame.state, 'w') : { w: [], b: [] }), [frame]);
   const lastMove = frame?.move ? { from: frame.move.from, to: frame.move.to } : undefined;
 
   const checkSquares = useMemo(() => {
@@ -283,6 +286,8 @@ export function ReviewPage() {
 
           {/* Board */}
           <div style={{ display: 'grid', justifyContent: 'center' }}>
+            <CapturedPiecesPanel captured={capturedPieces} showDelta />
+
             <ChessBoard
               state={frame!.state}
               orientation={orientation}

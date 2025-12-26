@@ -14,9 +14,11 @@ import { createInitialGameState } from '../domain/gameState';
 import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
 import { generatePseudoLegalMoves } from '../domain/movegen';
+import { getCapturedPiecesFromState } from '../domain/material/captured';
 import { gameReducer } from '../domain/reducer';
 import { oppositeColor } from '../domain/chessTypes';
 import { ChessBoard } from '../ui/ChessBoard';
+import { CapturedPiecesPanel } from '../ui/CapturedPiecesPanel';
 import { PromotionChooser } from '../ui/PromotionChooser';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { ResultDialog } from '../ui/ResultDialog';
@@ -190,6 +192,8 @@ export function GamePage() {
   }, [state, selectedSquare]);
 
   const { status, isGameOver, inCheck, lastMove, checkSquares } = useDerivedGameView(state);
+
+  const capturedPieces = useMemo(() => getCapturedPiecesFromState(state, 'w'), [state]);
 
   // ---------------- v3 Step 1: recording + persistence readiness ----------------
   const recorderRef = useRef<GameRecorder | null>(null);
@@ -692,6 +696,8 @@ export function GamePage() {
 
       <div className="card">
         <h3 className="h3">Board</h3>
+        <CapturedPiecesPanel captured={capturedPieces} showDelta />
+
         <ChessBoard
           state={state}
           orientation={orientation}
