@@ -30,6 +30,9 @@ import { HeuristicBot } from '../domain/ai/heuristicBot';
 import { StrongEngineBot } from '../domain/ai/strongEngineBot';
 import { WorkerEngineAi, isWorkerEngineSupported } from './game/workerEngineAi';
 import { toAlgebraic } from '../domain/square';
+import { startRecording, type GameRecorder } from '../domain/recording/recording';
+import type { Players, RecordedGameMode, TimeControl as RecordedTimeControl } from '../domain/recording/types';
+import { putGame } from '../storage/gamesDb';
 
 function makeGameId(mode: GameMode): string {
   const prefix = mode === 'local' ? 'local' : 'vs';
@@ -86,10 +89,19 @@ export function GamePage() {
 
   const navigate = useNavigate();
 
-  const timeControl = parseTimeControlParam(searchParams.get('tc'));
-  const orientation = parseOrientationParam(searchParams.get('o'));
+  const timeControlParam = searchParams.get('tc');
+  const orientationParam = searchParams.get('o');
 
-  const gameId = useMemo(() => makeGameId(mode), [mode]);
+  // Keep parsed setup values referentially stable across renders.
+  const timeControl = useMemo(() => parseTimeControlParam(timeControlParam), [timeControlParam]);
+  const orientation = useMemo(() => parseOrientationParam(orientationParam), [orientationParam]);
+
+  const [gameId, setGameId] = useState(() => makeGameId(mode));
+
+  // If the user navigates between modes while staying on the page, ensure the id resets.
+  useEffect(() => {
+    setGameId(makeGameId(mode));
+  }, [mode]);
 
   // In vs-computer mode, the player may choose "Random"; resolve it once per page mount.
   const playerColor: Color = useMemo(() => {
@@ -179,6 +191,39 @@ export function GamePage() {
 
   const { status, isGameOver, inCheck, lastMove, checkSquares } = useDerivedGameView(state);
 
+  // ---------------- v3 Step 1: recording + persistence readiness ----------------
+  const recorderRef = useRef<GameRecorder | null>(null);
+  const persistedGameIdRef = useRef<string | null>(null);
+
+  const players: Players = useMemo(() => {
+    if (mode === 'local') return { white: 'White', black: 'Black' };
+    // vsComputer
+    return playerColor === 'w'
+      ? { white: 'You', black: 'Computer' }
+      : { white: 'Computer', black: 'You' };
+  }, [mode, playerColor]);
+
+  const recordedMode: RecordedGameMode = mode === 'local' ? 'local' : 'vsComputer';
+  const recordedTimeControl: RecordedTimeControl = timeControl ?? { kind: 'none' };
+
+  // Start a fresh recorder whenever a new game id is created.
+  useEffect(() => {
+    recorderRef.current = startRecording({
+      id: gameId,
+      mode: recordedMode,
+      players,
+      timeControl: recordedTimeControl,
+      startedAtMs: Date.now(),
+      initialFen: null
+    });
+    persistedGameIdRef.current = null;
+  }, [gameId, recordedMode, players, recordedTimeControl]);
+
+  function commitMove(move: Move) {
+    recorderRef.current?.recordMove(move);
+    dispatch({ type: 'applyMove', move });
+  }
+
   const { hasClock, clock } = useLocalClocks(
     state,
     timeControl ?? { kind: 'none' },
@@ -197,13 +242,38 @@ export function GamePage() {
     config: aiConfig,
     onApplyMove: (move) => {
       clearHint();
-      dispatch({ type: 'applyMove', move });
+      commitMove(move);
       setSelectedSquare(null);
       setPendingPromotion(null);
       setConfirm(null);
     },
     onError: (msg) => showNotice(msg)
   });
+
+  // Persist a finished game once (durably) when it ends.
+  useEffect(() => {
+    if (!isGameOver) return;
+    if (persistedGameIdRef.current === gameId) return;
+
+    // Only persist if we have a terminal status.
+    if (status.kind === 'inProgress') return;
+
+    persistedGameIdRef.current = gameId;
+
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+
+    const record = recorder.finalize({
+      status: status,
+      finishedAtMs: Date.now(),
+      fallbackHistory: state.history
+    });
+
+    // Best-effort write; errors should not break gameplay.
+    void putGame(record).catch(() => {
+      // ignored (e.g. quota issues)
+    });
+  }, [isGameOver, gameId, status, state.history]);
 
   // Close in-progress input dialogs if the game ends (mate/draw/resign).
   useEffect(() => {
@@ -261,7 +331,7 @@ export function GamePage() {
     }
 
     // Non-promotion: there should be exactly one legal candidate.
-    dispatch({ type: 'applyMove', move: candidates[0] });
+    commitMove(candidates[0]);
     setSelectedSquare(null);
   }
 
@@ -544,6 +614,7 @@ export function GamePage() {
                 aiCtl.cancel();
                 clearHint();
                 dispatch({ type: 'newGame' });
+                setGameId(makeGameId(mode));
                 setSelectedSquare(null);
                 setPendingPromotion(null);
               }}
@@ -652,7 +723,7 @@ export function GamePage() {
             options={pendingPromotion.options}
             onChoose={(move) => {
               clearHint();
-              dispatch({ type: 'applyMove', move });
+              commitMove(move);
               setPendingPromotion(null);
               setSelectedSquare(null);
             }}
@@ -694,6 +765,7 @@ export function GamePage() {
               aiCtl.cancel();
               clearHint();
               dispatch({ type: 'newGame' });
+              setGameId(makeGameId(mode));
               setSelectedSquare(null);
               setPendingPromotion(null);
               setConfirm(null);
