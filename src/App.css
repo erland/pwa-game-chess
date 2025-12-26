@@ -487,3 +487,46 @@ h1 {
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   padding-top: 16px;
 }
+
+
+/* --- History (v3 Step 2) --- */
+.historyList {
+  display: grid;
+  gap: 12px;
+}
+
+.historyItemHeader {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.historyMeta {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.historyMeta > span {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: rgba(229, 231, 235, 0.82);
+}
+
+.btn-danger {
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.26);
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+}

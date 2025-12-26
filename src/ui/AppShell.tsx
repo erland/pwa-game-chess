@@ -16,6 +16,12 @@ export function AppShell() {
             <Link to="/local/setup" className="navLink">
               Local
             </Link>
+            <Link to="/vs-computer/setup" className="navLink">
+              Vs Computer
+            </Link>
+            <Link to="/history" className="navLink">
+              History
+            </Link>
           </nav>
         </div>
       </header>
