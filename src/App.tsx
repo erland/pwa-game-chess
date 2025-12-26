@@ -6,6 +6,7 @@ import { VsComputerSetupPage } from './pages/VsComputerSetupPage';
 import { GamePage } from './pages/GamePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { HistoryPage } from './pages/HistoryPage';
+import { ReviewPage } from './pages/ReviewPage';
 import { AppShell } from './ui/AppShell';
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/local/game" element={<GamePage />} />
           <Route path="/vs-computer/game" element={<GamePage />} />
           <Route path="/history" element={<HistoryPage />} />
+          <Route path="/review/:id" element={<ReviewPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

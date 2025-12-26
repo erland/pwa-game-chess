@@ -123,10 +123,9 @@ export function HistoryPage() {
                   </div>
 
                   <div className="actions">
-                    {/* v4 will add review/details page */}
-                    <button type="button" className="btn" disabled title="Review arrives in v4">
+                    <Link to={`/review/${g.id}`} className="btn">
                       Review
-                    </button>
+                    </Link>
                     <button
                       type="button"
                       className="btn btn-danger"

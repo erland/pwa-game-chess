@@ -530,3 +530,92 @@ h1 {
 .btn-danger:disabled {
   opacity: 0.6;
 }
+
+
+/* Review page (v3 Step 4) */
+.reviewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reviewLayout {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+}
+
+.reviewBoardCard {
+  min-width: 0;
+}
+
+.reviewMovesCard {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.reviewNav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.reviewPly {
+  display: grid;
+  gap: 2px;
+  padding: 2px 6px;
+}
+
+.reviewMovesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.reviewMovesList {
+  overflow: auto;
+}
+
+.reviewMovesTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.reviewMovesTable th,
+.reviewMovesTable td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.moveBtn {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.moveBtn:hover {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.moveBtn.isActive {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+@media (max-width: 900px) {
+  .reviewLayout {
+    grid-template-columns: 1fr;
+  }
+}
