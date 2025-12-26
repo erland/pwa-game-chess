@@ -689,3 +689,17 @@ h1 {
   overflow: auto;
   white-space: pre-wrap;
 }
+
+
+/* PGN import */
+.textarea {
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(0,0,0,0.18);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.errorText { color: #ffb4b4; }

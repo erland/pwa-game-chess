@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { GameRecord, TimeControl } from '../domain/recording/types';
-import { deleteGame, listGames } from '../storage/gamesDb';
+import { deleteGame, listGames, putGame } from '../storage/gamesDb';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { ImportPgnDialog } from '../ui/ImportPgnDialog';
+import { importPGNToGameRecord } from '../domain/notation/pgnImport';
 
 type PendingDelete = { id: string; title: string } | null;
 
@@ -44,6 +46,10 @@ export function HistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
+
+  const navigate = useNavigate();
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   async function refresh() {
     setIsLoading(true);
@@ -97,6 +103,9 @@ export function HistoryPage() {
           </div>
 
           <div className="actions">
+            <button type="button" className="btn btn-secondary" onClick={() => { setImportError(null); setIsImportOpen(true); }} disabled={isLoading}>
+              Import PGN
+            </button>
             <button type="button" className="btn btn-secondary" onClick={() => void refresh()} disabled={isLoading}>
               Refresh
             </button>
@@ -145,6 +154,31 @@ export function HistoryPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {isImportOpen && (
+        <ImportPgnDialog
+          onCancel={() => setIsImportOpen(false)}
+          onImport={async (pgnText) => {
+            setImportError(null);
+            try {
+              const record = importPGNToGameRecord(pgnText);
+              await putGame(record);
+              setIsImportOpen(false);
+              await refresh();
+              navigate(`/review/${record.id}`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              setImportError(msg);
+            }
+          }}
+        />
+      )}
+
+      {importError && (
+        <div className="card" role="alert">
+          <p className="errorText">Import failed: {importError}</p>
         </div>
       )}
 
