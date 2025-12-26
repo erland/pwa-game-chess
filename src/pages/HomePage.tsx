@@ -26,14 +26,6 @@ export function HomePage() {
           </Link>
         </div>
       </div>
-
-      <div className="card">
-        <h2>Coming later</h2>
-        <ul>
-          <li>Play Online (v3)</li>
-          <li>Review Games (v4)</li>
-        </ul>
-      </div>
     </section>
   );
 }

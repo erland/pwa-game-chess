@@ -6,10 +6,16 @@
   gap: 24px;
 }
 
+code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .appHeader {
   display: flex;
   gap: 16px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .appBadge {
@@ -23,6 +29,22 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+.appBadgeLink {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.appBadgeLink:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.appBadgeLink:focus-visible {
+  outline: 2px solid rgba(229, 231, 235, 0.8);
+  outline-offset: 4px;
+}
+
 h1 {
   margin: 0;
   font-size: 28px;
@@ -31,7 +53,9 @@ h1 {
 .appHeaderText {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
+
 
 .nav {
   display: flex;
@@ -357,6 +381,13 @@ h1 {
   line-height: 1;
   transform: translateY(-1px);
   display: block;
+}
+
+.boardPiece svg,
+.dragPiece svg,
+.capturedGlyph svg {
+  width: 1em;
+  height: 1em;
 }
 
 .boardSq-selected {

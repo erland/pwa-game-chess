@@ -5,6 +5,7 @@ import type { GameState, Move, Piece, Square } from '../domain/chessTypes';
 import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
 import { FILES, RANKS, fileOf, makeSquare, rankOf, toAlgebraic } from '../domain/square';
+import { PieceIcon } from './PieceIcon';
 
 export type ChessBoardProps = {
   state: GameState;
@@ -44,25 +45,6 @@ function isDarkSquare(square: Square): boolean {
   return (fileOf(square) + rankOf(square)) % 2 === 0;
 }
 
-function pieceToGlyph(piece: Piece): string {
-  const isWhite = piece.color === 'w';
-  switch (piece.type) {
-    case 'k':
-      return isWhite ? '♔' : '♚';
-    case 'q':
-      return isWhite ? '♕' : '♛';
-    case 'r':
-      return isWhite ? '♖' : '♜';
-    case 'b':
-      return isWhite ? '♗' : '♝';
-    case 'n':
-      return isWhite ? '♘' : '♞';
-    case 'p':
-      return isWhite ? '♙' : '♟';
-    default:
-      return '';
-  }
-}
 
 function pieceName(piece: Piece): string {
   const color = piece.color === 'w' ? 'white' : 'black';
@@ -312,7 +294,9 @@ export function ChessBoard({
                 disabled={disabled}
               >
                 <span className="boardPiece" aria-hidden>
-                  {piece && !isDraggingOrigin ? pieceToGlyph(piece) : ''}
+                  {piece && !isDraggingOrigin ? (
+                    <PieceIcon ariaHidden color={piece.color} type={piece.type} />
+                  ) : null}
                 </span>
                 {/* Hint dots for legal moves. */}
                 {isLegal && !piece && <span className="boardHint" aria-hidden />}
@@ -330,7 +314,7 @@ export function ChessBoard({
                 top: dragging.clientY
               }}
             >
-              {pieceToGlyph(dragging.piece)}
+              <PieceIcon ariaHidden color={dragging.piece.color} type={dragging.piece.type} />
             </div>
           </div>
         )}

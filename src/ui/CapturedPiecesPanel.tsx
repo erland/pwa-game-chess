@@ -1,26 +1,8 @@
 import type { Color, PieceType } from '../domain/chessTypes';
 import type { CapturedPieces } from '../domain/material/captured';
 import { captureMaterialDelta } from '../domain/material/captured';
+import { PieceIcon } from './PieceIcon';
 
-function pieceTypeToGlyph(color: Color, type: PieceType): string {
-  const isWhite = color === 'w';
-  switch (type) {
-    case 'k':
-      return isWhite ? '♔' : '♚';
-    case 'q':
-      return isWhite ? '♕' : '♛';
-    case 'r':
-      return isWhite ? '♖' : '♜';
-    case 'b':
-      return isWhite ? '♗' : '♝';
-    case 'n':
-      return isWhite ? '♘' : '♞';
-    case 'p':
-      return isWhite ? '♙' : '♟';
-    default:
-      return '';
-  }
-}
 
 function groupCounts(pieces: PieceType[]): Array<{ type: PieceType; count: number }> {
   const map = new Map<PieceType, number>();
@@ -59,7 +41,7 @@ export function CapturedPiecesPanel({ captured, showDelta }: CapturedPiecesProps
           ) : (
             blackCaps.map(({ type, count }) => (
               <span key={`b-${type}`} className="capturedItem" aria-label={`captured ${count} ${type}`}>
-                <span className="capturedGlyph">{pieceTypeToGlyph('w', type)}</span>
+                <span className="capturedGlyph"><PieceIcon ariaHidden color={'w'} type={type} /></span>
                 {count > 1 && <span className="capturedCount">×{count}</span>}
               </span>
             ))
@@ -76,7 +58,7 @@ export function CapturedPiecesPanel({ captured, showDelta }: CapturedPiecesProps
           ) : (
             whiteCaps.map(({ type, count }) => (
               <span key={`w-${type}`} className="capturedItem" aria-label={`captured ${count} ${type}`}>
-                <span className="capturedGlyph">{pieceTypeToGlyph('b', type)}</span>
+                <span className="capturedGlyph"><PieceIcon ariaHidden color={'b'} type={type} /></span>
                 {count > 1 && <span className="capturedCount">×{count}</span>}
               </span>
             ))

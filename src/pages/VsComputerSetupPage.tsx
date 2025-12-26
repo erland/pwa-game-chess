@@ -290,14 +290,6 @@ export function VsComputerSetupPage() {
           </div>
         </form>
       </div>
-
-      <div className="card">
-        <h3 className="h3">Note</h3>
-        <p className="muted">
-          This version uses a simple built-in bot (no external engine). Later v2 steps can make the AI stronger and/or
-          move it into a Web Worker.
-        </p>
-      </div>
     </section>
   );
 }

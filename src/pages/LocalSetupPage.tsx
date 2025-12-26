@@ -98,14 +98,6 @@ export function LocalSetupPage() {
           </div>
         </form>
       </div>
-
-      <div className="card">
-        <h3 className="h3">Note</h3>
-        <p className="muted">
-          In v1 Step 2 we only wire up navigation and the game start flow. The chess rules engine and board UI are built in
-          later steps.
-        </p>
-      </div>
     </section>
   );
 }
