@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import type { Orientation } from '../domain/localSetup';
@@ -69,6 +69,8 @@ export function ReviewPage() {
   const [ply, setPly] = useState(0);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<Orientation>('w');
+  const maxPlyRef = useRef(0);
+  const moveListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -112,9 +114,9 @@ export function ReviewPage() {
       if (tag === 'input' || tag === 'textarea' || (target as any)?.isContentEditable) return;
 
       if (ev.key === 'ArrowLeft') setPly((p) => Math.max(0, p - 1));
-      if (ev.key === 'ArrowRight') setPly((p) => p + 1);
+      if (ev.key === 'ArrowRight') setPly((p) => Math.min(maxPlyRef.current, p + 1));
       if (ev.key === 'Home') setPly(0);
-      if (ev.key === 'End') setPly((p) => p + 999999);
+      if (ev.key === 'End') setPly(maxPlyRef.current);
     }
 
     window.addEventListener('keydown', onKeyDown);
@@ -124,11 +126,25 @@ export function ReviewPage() {
   const ready = load.kind === 'ready' ? load : null;
   const maxPly = ready ? ready.replay.frames.length - 1 : 0;
 
+  useEffect(() => {
+    maxPlyRef.current = maxPly;
+  }, [maxPly]);
+
   // Clamp ply whenever maxPly changes (End key above may overshoot)
   useEffect(() => {
     if (!ready) return;
     setPly((p) => Math.max(0, Math.min(p, maxPly)));
   }, [ready, maxPly]);
+
+  // Keep the active move visible when stepping through the game.
+  useEffect(() => {
+    const root = moveListRef.current;
+    if (!root) return;
+    const active = root.querySelector<HTMLElement>('.moveBtn.isActive');
+    if (active && typeof (active as any).scrollIntoView === 'function') {
+      (active as any).scrollIntoView({ block: 'nearest' });
+    }
+  }, [ply]);
 
   const frame = ready ? ready.replay.frames[Math.max(0, Math.min(ply, maxPly))] : null;
   const capturedPieces = useMemo(() => (frame ? getCapturedPiecesFromState(frame.state, 'w') : { w: [], b: [] }), [frame]);
@@ -295,19 +311,21 @@ export function ReviewPage() {
       <div className="reviewLayout">
         <div className="card reviewBoardCard">
           <div className="reviewNav">
-            <button type="button" className="btn btn-secondary" onClick={() => setPly(0)} disabled={ply <= 0}>
+            <button type="button" className="btn btn-secondary" onClick={() => setPly(0)} disabled={ply <= 0} aria-label="First move" title="First">
               ⏮
             </button>
             <button
               type="button"
               className="btn btn-secondary"
               onClick={() => setPly((p) => Math.max(0, p - 1))}
+              aria-label="Previous move"
+              title="Previous"
               disabled={ply <= 0}
             >
               ◀
             </button>
             <div className="reviewPly">
-              <span>
+              <span data-testid="review-ply">
                 Ply <strong>{ply}</strong> / {maxPly}
               </span>
               <span className="muted">{formatTime(record.finishedAtMs - record.startedAtMs)}</span>
@@ -316,11 +334,13 @@ export function ReviewPage() {
               type="button"
               className="btn btn-secondary"
               onClick={() => setPly((p) => Math.min(maxPly, p + 1))}
+              aria-label="Next move"
+              title="Next"
               disabled={ply >= maxPly}
             >
               ▶
             </button>
-            <button type="button" className="btn btn-secondary" onClick={() => setPly(maxPly)} disabled={ply >= maxPly}>
+            <button type="button" className="btn btn-secondary" onClick={() => setPly(maxPly)} disabled={ply >= maxPly} aria-label="Last move" title="Last">
               ⏭
             </button>
           </div>
@@ -330,7 +350,11 @@ export function ReviewPage() {
           <div className="card">
             <h3 className="h3">Notation &amp; export</h3>
 
-            {exportNotice && <p className="muted">{exportNotice}</p>}
+            {exportNotice && (
+              <p className="muted" role="status" aria-live="polite">
+                {exportNotice}
+              </p>
+            )}
 
             <div className="reviewExportGrid">
               <div>
@@ -349,6 +373,7 @@ export function ReviewPage() {
                       window.setTimeout(() => setExportNotice(null), 1200);
                     }}
                     disabled={!frame}
+                    aria-label="Copy FEN to clipboard"
                   >
                     Copy FEN
                   </button>
@@ -370,12 +395,13 @@ export function ReviewPage() {
                       window.setTimeout(() => setExportNotice(null), 1200);
                     }}
                     disabled={!pgnText}
+                    aria-label="Copy PGN to clipboard"
                   >
                     Copy PGN
                   </button>
 
                   {pgnDownload && (
-                    <a className="btn" href={pgnDownload} download={`${ready ? ready.record.id : 'game'}.pgn`}>
+                    <a className="btn" href={pgnDownload} download={`${ready ? ready.record.id : 'game'}.pgn`} aria-label="Download PGN file">
                       Download PGN
                     </a>
                   )}
@@ -416,8 +442,9 @@ export function ReviewPage() {
             </button>
           </div>
 
-          <div className="reviewMovesList">
+          <div className="reviewMovesList" ref={moveListRef}>
             <table className="reviewMovesTable">
+              <caption className="srOnly">Moves in SAN notation</caption>
               <thead>
                 <tr>
                   <th>#</th>
@@ -435,6 +462,8 @@ export function ReviewPage() {
                           type="button"
                           className={ply === r.white.ply ? 'moveBtn isActive' : 'moveBtn'}
                           onClick={() => setPly(r.white!.ply)}
+                          aria-current={ply === r.white.ply ? 'true' : undefined}
+                          aria-label={`Go to move ${r.moveNo}. White: ${r.white.label}`}
                         >
                           {r.white.label}
                         </button>
@@ -448,6 +477,8 @@ export function ReviewPage() {
                           type="button"
                           className={ply === r.black.ply ? 'moveBtn isActive' : 'moveBtn'}
                           onClick={() => setPly(r.black!.ply)}
+                          aria-current={ply === r.black.ply ? 'true' : undefined}
+                          aria-label={`Go to move ${r.moveNo}. Black: ${r.black.label}`}
                         >
                           {r.black.label}
                         </button>

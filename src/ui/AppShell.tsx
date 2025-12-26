@@ -1,8 +1,16 @@
-import { Link, Outlet } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
+
+function navClass({ isActive }: { isActive: boolean }): string {
+  return isActive ? 'navLink isActive' : 'navLink';
+}
 
 export function AppShell() {
   return (
     <div className="app">
+      <a className="skipLink" href="#main">
+        Skip to content
+      </a>
+
       <header className="appHeader">
         <div className="appBadge" aria-hidden>
           ♞
@@ -10,23 +18,23 @@ export function AppShell() {
         <div className="appHeaderText">
           <h1>PWA Chess</h1>
           <nav className="nav" aria-label="Primary">
-            <Link to="/" className="navLink">
+            <NavLink to="/" className={navClass} end>
               Home
-            </Link>
-            <Link to="/local/setup" className="navLink">
+            </NavLink>
+            <NavLink to="/local/setup" className={navClass}>
               Local
-            </Link>
-            <Link to="/vs-computer/setup" className="navLink">
+            </NavLink>
+            <NavLink to="/vs-computer/setup" className={navClass}>
               Vs Computer
-            </Link>
-            <Link to="/history" className="navLink">
+            </NavLink>
+            <NavLink to="/history" className={navClass}>
               History
-            </Link>
+            </NavLink>
           </nav>
         </div>
       </header>
 
-      <main className="content">
+      <main id="main" className="content">
         <Outlet />
       </main>
 

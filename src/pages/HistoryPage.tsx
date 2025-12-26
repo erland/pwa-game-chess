@@ -132,13 +132,13 @@ export function HistoryPage() {
                   </div>
 
                   <div className="actions">
-                    <Link to={`/review/${g.id}`} className="btn">
-                      Review
+                    <Link to={`/review/${g.id}`} className="btn" aria-label={`Review game ${title}`}>Review
                     </Link>
                     <button
                       type="button"
                       className="btn btn-danger"
                       onClick={() => setPendingDelete({ id: g.id, title })}
+                      aria-label={`Delete game ${title}`}
                     >
                       Delete
                     </button>
@@ -188,6 +188,7 @@ export function HistoryPage() {
           message={`Delete “${pendingDelete.title}” from history? This cannot be undone.`}
           confirmLabel="Delete"
           cancelLabel="Cancel"
+          initialFocus="cancel"
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => {
             const id = pendingDelete.id;

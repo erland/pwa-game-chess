@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 export type ImportPgnDialogProps = {
   title?: string;
@@ -16,44 +16,99 @@ export function ImportPgnDialog({
   const [text, setText] = useState(initialText);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const titleId = useId();
+  const descId = useId();
 
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onCancel();
-    }
-    window.addEventListener('keydown', onKeyDown);
     // focus textarea for quick paste
-    setTimeout(() => textareaRef.current?.focus(), 0);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onCancel]);
+    const t = window.setTimeout(() => textareaRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, []);
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const content = await file.text();
-    setText(content);
-    // allow re-picking the same file
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    try {
+      const content = await file.text();
+      setText(content);
+    } finally {
+      // allow re-picking the same file
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function trapTab(e: React.KeyboardEvent) {
+    if (e.key !== 'Tab') return;
+    const root = modalRef.current;
+    if (!root) return;
+
+    const focusables = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'button,[href],input,textarea,select,[tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true');
+
+    if (focusables.length === 0) return;
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+
+    if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    }
   }
 
   return (
-    <div className="modalBackdrop" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="modal" style={{ maxWidth: 760 }}>
-        <h3 className="h3">{title}</h3>
+    <div
+      className="modalBackdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      onMouseDown={(e) => {
+        // Clicking the backdrop cancels.
+        if (e.currentTarget === e.target) onCancel();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onCancel();
+      }}
+    >
+      <div
+        ref={modalRef}
+        className="modal"
+        style={{ maxWidth: 760 }}
+        onKeyDown={(e) => {
+          trapTab(e);
+        }}
+      >
+        <h3 id={titleId} className="h3">
+          {title}
+        </h3>
 
-        <p className="muted">
+        <p id={descId} className="muted">
           Paste a PGN (including tags and moves), or choose a .pgn file. The game will be added to your History.
         </p>
 
         <div className="stack" style={{ gap: 10 }}>
           <div className="actions" style={{ justifyContent: 'space-between' }}>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pgn,text/plain"
-              onChange={onPickFile}
-              aria-label="Choose PGN file"
-            />
+            <label className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              Choose file
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pgn,text/plain"
+                onChange={onPickFile}
+                aria-label="Choose PGN file"
+                className="visuallyHiddenFileInput"
+              />
+            </label>
+
             <button type="button" className="btn btn-secondary" onClick={() => setText('')}>
               Clear
             </button>
@@ -70,7 +125,7 @@ export function ImportPgnDialog({
           />
 
           <div className="actions" style={{ marginTop: 4 }}>
-            <button type="button" className="btn btn-secondary" onClick={onCancel}>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} aria-label="Cancel import">
               Cancel
             </button>
             <button
@@ -78,6 +133,7 @@ export function ImportPgnDialog({
               className="btn btn-primary"
               onClick={() => onImport(text)}
               disabled={!text.trim()}
+              aria-label="Import PGN"
             >
               Import
             </button>
