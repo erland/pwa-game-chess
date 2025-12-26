@@ -670,3 +670,22 @@ h1 {
   margin-left: auto;
   font-weight: 700;
 }
+
+/* Review export */
+.reviewExportGrid {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 900px) {
+  .reviewExportGrid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.preSmall {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+}

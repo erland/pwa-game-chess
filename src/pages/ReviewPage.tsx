@@ -6,8 +6,11 @@ import type { GameRecord } from '../domain/recording/types';
 import type { GameState, Move } from '../domain/chessTypes';
 
 import { getPiece } from '../domain/board';
-import { toAlgebraic } from '../domain/square';
 import { findKing, isInCheck } from '../domain/attack';
+
+import { toSAN } from '../domain/notation/san';
+import { toFEN } from '../domain/notation/fen';
+import { toPGN } from '../domain/notation/pgn';
 
 import { getGame } from '../storage/gamesDb';
 import { getCapturedPiecesFromState } from '../domain/material/captured';
@@ -31,23 +34,40 @@ function formatTime(ms: number): string {
   return `${m}m ${r.toString().padStart(2, '0')}s`;
 }
 
-function formatMoveLabel(move: Move, prevState: GameState): string {
-  if (move.isCastle) return move.castleSide === 'q' ? 'O-O-O' : 'O-O';
 
-  const from = toAlgebraic(move.from);
-  const to = toAlgebraic(move.to);
 
-  const isCapture = Boolean(getPiece(prevState.board, move.to)) || Boolean(move.isEnPassant);
-  const sep = isCapture ? '×' : '→';
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to legacy method
+  }
 
-  const promo = move.promotion ? `=${move.promotion.toUpperCase()}` : '';
-  return `${from}${sep}${to}${promo}`;
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'true');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 export function ReviewPage() {
   const { id } = useParams<{ id: string }>();
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' });
   const [ply, setPly] = useState(0);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<Orientation>('w');
 
   useEffect(() => {
@@ -124,6 +144,27 @@ export function ReviewPage() {
 
   const title = ready ? `${ready.record.players.white} vs ${ready.record.players.black}` : 'Review';
 
+
+  const pgnText = useMemo(() => {
+    if (!ready) return '';
+    return toPGN(ready.record);
+  }, [ready?.record.id]);
+
+  const pgnDownload = useMemo(() => {
+    if (!pgnText) return null;
+    try {
+      return URL.createObjectURL(new Blob([pgnText], { type: 'application/x-chess-pgn' }));
+    } catch {
+      return null;
+    }
+  }, [pgnText]);
+
+  useEffect(() => {
+    return () => {
+      if (pgnDownload) URL.revokeObjectURL(pgnDownload);
+    };
+  }, [pgnDownload]);
+
   const rows = useMemo(() => {
     if (!ready) return [];
 
@@ -142,14 +183,14 @@ export function ReviewPage() {
       const wPly = i + 1;
       const wPrev = frames[wPly - 1].state;
       const wMove = moves[i];
-      const white = { ply: wPly, label: formatMoveLabel(wMove, wPrev) };
+      const white = { ply: wPly, label: toSAN(wPrev, wMove) };
 
       const bMove = moves[i + 1];
       let black: { ply: number; label: string } | undefined;
       if (bMove) {
         const bPly = i + 2;
         const bPrev = frames[bPly - 1].state;
-        black = { ply: bPly, label: formatMoveLabel(bMove, bPrev) };
+        black = { ply: bPly, label: toSAN(bPrev, bMove) };
       }
 
       out.push({ moveNo, white, black });
@@ -284,7 +325,66 @@ export function ReviewPage() {
             </button>
           </div>
 
-          {/* Board */}
+          
+          {/* Notation & export */}
+          <div className="card">
+            <h3 className="h3">Notation &amp; export</h3>
+
+            {exportNotice && <p className="muted">{exportNotice}</p>}
+
+            <div className="reviewExportGrid">
+              <div>
+                <div className="muted">FEN (current position)</div>
+                <pre className="pre preSmall" aria-label="FEN">
+                  {frame ? toFEN(frame.state) : ''}
+                </pre>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={async () => {
+                      const fen = frame ? toFEN(frame.state) : '';
+                      const ok = await copyText(fen);
+                      setExportNotice(ok ? 'Copied FEN' : 'Copy failed');
+                      window.setTimeout(() => setExportNotice(null), 1200);
+                    }}
+                    disabled={!frame}
+                  >
+                    Copy FEN
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="muted">PGN (full game)</div>
+                <pre className="pre preSmall" aria-label="PGN">
+                  {pgnText}
+                </pre>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={async () => {
+                      const ok = await copyText(pgnText);
+                      setExportNotice(ok ? 'Copied PGN' : 'Copy failed');
+                      window.setTimeout(() => setExportNotice(null), 1200);
+                    }}
+                    disabled={!pgnText}
+                  >
+                    Copy PGN
+                  </button>
+
+                  {pgnDownload && (
+                    <a className="btn" href={pgnDownload} download={`${ready ? ready.record.id : 'game'}.pgn`}>
+                      Download PGN
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+{/* Board */}
           <div style={{ display: 'grid', justifyContent: 'center' }}>
             <CapturedPiecesPanel captured={capturedPieces} showDelta />
 
