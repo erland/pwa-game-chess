@@ -5,6 +5,7 @@ import { applyMoveForValidation } from '../applyMove';
 import { getPiece } from '../board';
 import { fileOf, rankOf } from '../square';
 import { isInCheck } from '../attack';
+import { moveToUci } from '../notation/uci';
 
 import type { AiConfig, AiMoveMetadata } from './types';
 
@@ -182,6 +183,7 @@ type SearchResult = {
   depth: number;
   nodes: number;
   mateIn?: number;
+  pv?: string[];
 };
 
 function alphabeta(
@@ -193,7 +195,7 @@ function alphabeta(
   beta: number,
   nodesRef: { n: number },
   plyFromRoot: number
-): { score: number; mateIn?: number } {
+): { score: number; mateIn?: number; pv: Move[] } {
   if (env.shouldAbort()) throw new Error('ABORT');
 
   const forced = state.forcedStatus;
@@ -201,15 +203,15 @@ function alphabeta(
     if (forced.kind === 'resign' || forced.kind === 'timeout') {
       const win = forced.winner;
       const score = win === aiColor ? 1_000_000 : -1_000_000;
-      return { score };
+      return { score, pv: [] };
     }
     // draws
-    return { score: 0 };
+    return { score: 0, pv: [] };
   }
 
   if (depth <= 0) {
     nodesRef.n += 1;
-    return { score: evaluateCp(state, aiColor) };
+    return { score: evaluateCp(state, aiColor), pv: [] };
   }
 
   const moves = generateLegalMoves(state);
@@ -217,11 +219,11 @@ function alphabeta(
     nodesRef.n += 1;
     // No legal moves -> checkmate or stalemate.
     const inCheck = isInCheck(state, state.sideToMove);
-    if (!inCheck) return { score: 0 };
+    if (!inCheck) return { score: 0, pv: [] };
     const winner = oppositeColor(state.sideToMove);
     // Mate: prefer quicker mates and avoid getting mated.
     const mateScore = winner === aiColor ? 900_000 - plyFromRoot : -900_000 + plyFromRoot;
-    return { score: mateScore, mateIn: 1 };
+    return { score: mateScore, mateIn: 1, pv: [] };
   }
 
   // Move ordering (helps alpha-beta significantly).
@@ -231,6 +233,7 @@ function alphabeta(
 
   const maximizing = state.sideToMove === aiColor;
   let bestMateIn: number | undefined = undefined;
+  let bestPv: Move[] = [];
 
   if (maximizing) {
     let best = -Infinity;
@@ -241,11 +244,12 @@ function alphabeta(
       if (r.score > best) {
         best = r.score;
         bestMateIn = r.mateIn;
+        bestPv = [ordered[i], ...r.pv];
       }
       alpha = Math.max(alpha, best);
       if (alpha >= beta) break;
     }
-    return { score: best, mateIn: bestMateIn };
+    return { score: best, mateIn: bestMateIn, pv: bestPv };
   }
 
   let best = Infinity;
@@ -256,11 +260,12 @@ function alphabeta(
     if (r.score < best) {
       best = r.score;
       bestMateIn = r.mateIn;
+      bestPv = [ordered[i], ...r.pv];
     }
     beta = Math.min(beta, best);
     if (alpha >= beta) break;
   }
-  return { score: best, mateIn: bestMateIn };
+  return { score: best, mateIn: bestMateIn, pv: bestPv };
 }
 
 function pickFromTop(scored: Array<{ move: Move; score: number }>, rng: Rng, randomness: number): { move: Move; score: number } {
@@ -303,7 +308,7 @@ export function findBestMoveStrong(
   // Iterative deepening: keep the best move from the deepest fully-computed iteration.
   for (let depth = 1; depth <= maxDepth; depth++) {
     const nodesRef = { n: 0 };
-    const scored: Array<{ move: Move; score: number; mateIn?: number }> = [];
+    const scored: Array<{ move: Move; score: number; mateIn?: number; pv?: string[] }> = [];
 
     // Order root moves too.
     const ordered = legalRoot
@@ -316,7 +321,8 @@ export function findBestMoveStrong(
         const m = ordered[i];
         const next = applyMoveForValidation(state, m);
         const r = alphabeta(env2, next, aiColor, depth - 1, -Infinity, Infinity, nodesRef, 1);
-        scored.push({ move: m, score: r.score, mateIn: r.mateIn });
+        const pvMoves = [m, ...r.pv];
+        scored.push({ move: m, score: r.score, mateIn: r.mateIn, pv: pvMoves.map(moveToUci) });
       }
     } catch (e) {
       // Budget exceeded or aborted mid-iteration: keep previous completed depth.
@@ -337,7 +343,8 @@ export function findBestMoveStrong(
       scoreCp: picked.score,
       depth,
       nodes: nodesRef.n,
-      mateIn: top?.mateIn
+      mateIn: top?.mateIn,
+      pv: top?.pv
     };
 
     // If we found a forced mate score, no need to search deeper.
@@ -359,7 +366,8 @@ export function findBestMoveStrong(
       depth: final.depth,
       nodes: final.nodes,
       scoreCp: final.scoreCp,
-      mateIn: final.mateIn
+      mateIn: final.mateIn,
+      pv: final.pv
     }
   };
 }
