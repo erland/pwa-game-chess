@@ -156,6 +156,20 @@ export function useBoardInteraction(args: {
           }
 
           setDragging(null);
+        },
+        onPointerCancel: (e) => {
+          if (!dragging) return;
+          if (dragging.origin !== sq) return;
+
+          try {
+            (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+          } catch {
+            // ignore
+          }
+
+          // Cancelled drags should not apply moves and should not trigger a follow-up click.
+          suppressClickRef.current = false;
+          setDragging(null);
         }
       };
     },
