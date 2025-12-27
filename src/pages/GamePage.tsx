@@ -1,151 +1,53 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  formatOrientation,
-  formatTimeControl,
-  parseOrientationParam,
-  parseTimeControlParam
-} from '../domain/localSetup';
+import { Link, useNavigate } from 'react-router-dom';
+
+import { formatOrientation, formatTimeControl } from '../domain/localSetup';
 import type { Move, Square } from '../domain/chessTypes';
-import type { Color } from '../domain/chessTypes';
-import { parseGameModeParam, type GameMode } from '../domain/gameMode';
-import { formatDifficulty, formatSideChoice, parseDifficultyParam, parseSideChoiceParam } from '../domain/vsComputerSetup';
 import { createInitialGameState } from '../domain/gameState';
 import { getPiece } from '../domain/board';
 import { generateLegalMoves } from '../domain/legalMoves';
 import { generatePseudoLegalMoves } from '../domain/movegen';
 import { getCapturedPiecesFromState } from '../domain/material/captured';
 import { gameReducer } from '../domain/reducer';
-import { oppositeColor } from '../domain/chessTypes';
+
 import { ChessBoard } from '../ui/ChessBoard';
 import { CapturedPiecesPanel } from '../ui/CapturedPiecesPanel';
 import { PromotionChooser } from '../ui/PromotionChooser';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { ResultDialog } from '../ui/ResultDialog';
+
 import { useDerivedGameView } from './game/useDerivedGameView';
 import { useLocalClocks, formatClockMs } from './game/useLocalClocks';
 import { useToastNotice } from './game/useToastNotice';
 import { useAiController } from './game/useAiController';
-import type { ChessAi } from '../domain/ai/types';
-import { aiConfigFromDifficulty } from '../domain/ai/presets';
-import { HeuristicBot } from '../domain/ai/heuristicBot';
-import { StrongEngineBot } from '../domain/ai/strongEngineBot';
-import { WorkerEngineAi, isWorkerEngineSupported } from './game/workerEngineAi';
-import { toAlgebraic } from '../domain/square';
-import { startRecording, type GameRecorder } from '../domain/recording/recording';
-import type { Players, RecordedGameMode, TimeControl as RecordedTimeControl } from '../domain/recording/types';
-import { putGame } from '../storage/gamesDb';
-
-function makeGameId(mode: GameMode): string {
-  const prefix = mode === 'local' ? 'local' : 'vs';
-  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
-
-function parseIntParam(param: string | null): number | null {
-  if (param == null) return null;
-  const n = Number.parseInt(param, 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-function parseFloatParam(param: string | null): number | null {
-  if (param == null) return null;
-  const n = Number.parseFloat(param);
-  return Number.isFinite(n) ? n : null;
-}
-
-function cloneStateSnapshot<T>(state: T): T {
-  // GameState is JSON-serializable by design in this project.
-  // A deep clone avoids subtle bugs where AI sees a mutated reference.
-  return JSON.parse(JSON.stringify(state)) as T;
-}
-
-function isAbortError(err: unknown): boolean {
-  return Boolean(err) && typeof err === 'object' && (err as { name?: unknown }).name === 'AbortError';
-}
-
-function movesEqual(a: Move, b: Move): boolean {
-  return (
-    a.from === b.from &&
-    a.to === b.to &&
-    (a.promotion ?? null) === (b.promotion ?? null) &&
-    Boolean(a.isCastle) === Boolean(b.isCastle) &&
-    (a.castleSide ?? null) === (b.castleSide ?? null) &&
-    Boolean(a.isEnPassant) === Boolean(b.isEnPassant)
-  );
-}
+import { useGameSetup } from './game/useGameSetup';
+import { useHintController } from './game/useHintController';
+import { useGameRecording } from './game/useGameRecording';
+import { formatDifficulty, formatSideChoice } from '../domain/vsComputerSetup';
 
 export function GamePage() {
-  const [searchParams] = useSearchParams();
-  const location = useLocation();
-
-  const modeFromParam = parseGameModeParam(searchParams.get('m'));
-  const mode: GameMode = modeFromParam ?? (location.pathname.startsWith('/vs-computer') ? 'vsComputer' : 'local');
-
-  const playerSideChoice = parseSideChoiceParam(searchParams.get('side')) ?? 'w';
-  const difficulty = parseDifficultyParam(searchParams.get('d')) ?? 'easy';
-
-  const customThinkTimeMs = parseIntParam(searchParams.get('tt'));
-  const customRandomness = parseFloatParam(searchParams.get('rn'));
-  const customMaxDepth = parseIntParam(searchParams.get('md'));
-
   const navigate = useNavigate();
 
-  const timeControlParam = searchParams.get('tc');
-  const orientationParam = searchParams.get('o');
-
-  // Keep parsed setup values referentially stable across renders.
-  const timeControl = useMemo(() => parseTimeControlParam(timeControlParam), [timeControlParam]);
-  const orientation = useMemo(() => parseOrientationParam(orientationParam), [orientationParam]);
-
-  const [gameId, setGameId] = useState(() => makeGameId(mode));
-
-  // If the user navigates between modes while staying on the page, ensure the id resets.
-  useEffect(() => {
-    setGameId(makeGameId(mode));
-  }, [mode]);
-
-  // In vs-computer mode, the player may choose "Random"; resolve it once per page mount.
-  const playerColor: Color = useMemo(() => {
-    if (playerSideChoice === 'r') return Math.random() < 0.5 ? 'w' : 'b';
-    return playerSideChoice;
-  }, [playerSideChoice, gameId]);
-
-  const aiColor: Color = useMemo(() => oppositeColor(playerColor), [playerColor]);
-
-  const aiConfig = useMemo(() => {
-    if (difficulty !== 'custom') return aiConfigFromDifficulty(difficulty);
-    return aiConfigFromDifficulty('custom', undefined, {
-      thinkTimeMs: customThinkTimeMs ?? undefined,
-      randomness: customRandomness ?? undefined,
-      maxDepth: customMaxDepth ?? undefined
-    });
-  }, [difficulty, customThinkTimeMs, customRandomness, customMaxDepth]);
-
-  // v2 Step 7: choose AI implementation.
-  // - Easy/Medium: baseline heuristic bot (fast, no worker required).
-  // - Hard/Custom (with deeper depth): prefer WorkerEngineAi, fallback to StrongEngineBot.
-  const ai: ChessAi | null = useMemo(() => {
-    if (mode !== 'vsComputer') return null;
-
-    const wantsStrong = difficulty === 'hard' || (difficulty === 'custom' && (aiConfig.maxDepth ?? 1) >= 3);
-    if (!wantsStrong) return new HeuristicBot();
-
-    if (isWorkerEngineSupported()) return new WorkerEngineAi();
-    return new StrongEngineBot();
-  }, [mode, difficulty, aiConfig.maxDepth]);
-
-  // Ensure we init/dispose AI implementations that need lifecycle.
-  useEffect(() => {
-    void ai?.init?.();
-    return () => {
-      void ai?.dispose?.();
-    };
-  }, [ai]);
+  const {
+    mode,
+    timeControl,
+    orientation,
+    gameId,
+    restartId,
+    playerSideChoice,
+    difficulty,
+    playerColor,
+    aiColor,
+    aiConfig,
+    ai,
+    setupPath,
+    setupLabel,
+    players,
+    recordedMode,
+    recordedTimeControl
+  } = useGameSetup();
 
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createInitialGameState());
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<{
@@ -159,31 +61,8 @@ export function GamePage() {
     | null
   >(null);
 
-  // v2 Step 6: Hint feature (recommended move for the player).
-  const [hintMove, setHintMove] = useState<{ from: Square; to: Square } | null>(null);
-  const [hintText, setHintText] = useState<string | null>(null);
-  const [isHintThinking, setIsHintThinking] = useState(false);
-  const hintAbortRef = useRef<AbortController | null>(null);
-  const hintRequestRef = useRef(0);
+  const { status, isGameOver, inCheck, lastMove, checkSquares } = useDerivedGameView(state);
 
-  function clearHint() {
-    // Bump the request id so any in-flight promise result is treated as stale,
-    // even if a particular AI implementation ignores AbortSignal.
-    hintRequestRef.current += 1;
-    hintAbortRef.current?.abort();
-    hintAbortRef.current = null;
-    setIsHintThinking(false);
-    setHintMove(null);
-    setHintText(null);
-  }
-
-  useEffect(() => {
-    return () => {
-      hintAbortRef.current?.abort();
-    };
-  }, []);
-
-  // Step 9/8 alignment: brief feedback for illegal move attempts.
   const { noticeText, showNotice, clearNotice } = useToastNotice(1500);
 
   const legalMovesFromSelection = useMemo(() => {
@@ -191,52 +70,24 @@ export function GamePage() {
     return generateLegalMoves(state, selectedSquare);
   }, [state, selectedSquare]);
 
-  const { status, isGameOver, inCheck, lastMove, checkSquares } = useDerivedGameView(state);
-
   const capturedPieces = useMemo(() => getCapturedPiecesFromState(state, 'w'), [state]);
 
-  // ---------------- v3 Step 1: recording + persistence readiness ----------------
-  const recorderRef = useRef<GameRecorder | null>(null);
-  const persistedGameIdRef = useRef<string | null>(null);
-
-  const players: Players = useMemo(() => {
-    if (mode === 'local') return { white: 'White', black: 'Black' };
-    // vsComputer
-    return playerColor === 'w'
-      ? { white: 'You', black: 'Computer' }
-      : { white: 'Computer', black: 'You' };
-  }, [mode, playerColor]);
-
-  const recordedMode: RecordedGameMode = mode === 'local' ? 'local' : 'vsComputer';
-  const recordedTimeControl: RecordedTimeControl = timeControl ?? { kind: 'none' };
-
-  // Start a fresh recorder whenever a new game id is created.
-  useEffect(() => {
-    recorderRef.current = startRecording({
-      id: gameId,
-      mode: recordedMode,
-      players,
-      timeControl: recordedTimeControl,
-      startedAtMs: Date.now(),
-      initialFen: null
-    });
-    persistedGameIdRef.current = null;
-  }, [gameId, recordedMode, players, recordedTimeControl]);
-
-  function commitMove(move: Move) {
-    recorderRef.current?.recordMove(move);
-    dispatch({ type: 'applyMove', move });
-  }
-
-  const { hasClock, clock } = useLocalClocks(
-    state,
-    timeControl ?? { kind: 'none' },
+  const { commitMove } = useGameRecording({
+    gameId,
+    recordedMode,
+    players,
+    recordedTimeControl,
     isGameOver,
+    status,
+    history: state.history,
     dispatch
-  );
+  });
 
-  // v2 Step 2: AI boundary + orchestration hook.
-  // Note: actual AI implementation is introduced in later steps (v2 Step 3+).
+  const { hasClock, clock } = useLocalClocks(state, timeControl ?? { kind: 'none' }, isGameOver, dispatch);
+
+  // Hint controller is created after AI controller, but AI needs a stable reference to clear hints.
+  const clearHintRef = useRef<(() => void) | null>(null);
+
   const aiCtl = useAiController({
     enabled: mode === 'vsComputer',
     state,
@@ -245,7 +96,7 @@ export function GamePage() {
     ai,
     config: aiConfig,
     onApplyMove: (move) => {
-      clearHint();
+      clearHintRef.current?.();
       commitMove(move);
       setSelectedSquare(null);
       setPendingPromotion(null);
@@ -254,30 +105,17 @@ export function GamePage() {
     onError: (msg) => showNotice(msg)
   });
 
-  // Persist a finished game once (durably) when it ends.
-  useEffect(() => {
-    if (!isGameOver) return;
-    if (persistedGameIdRef.current === gameId) return;
-
-    // Only persist if we have a terminal status.
-    if (status.kind === 'inProgress') return;
-
-    persistedGameIdRef.current = gameId;
-
-    const recorder = recorderRef.current;
-    if (!recorder) return;
-
-    const record = recorder.finalize({
-      status: status,
-      finishedAtMs: Date.now(),
-      fallbackHistory: state.history
-    });
-
-    // Best-effort write; errors should not break gameplay.
-    void putGame(record).catch(() => {
-      // ignored (e.g. quota issues)
-    });
-  }, [isGameOver, gameId, status, state.history]);
+  const hint = useHintController({
+    enabled: mode === 'vsComputer',
+    state,
+    isGameOver,
+    playerColor,
+    aiConfig,
+    blocked: Boolean(pendingPromotion) || Boolean(confirm),
+    aiIsThinking: aiCtl.isThinking,
+    showNotice
+  });
+  clearHintRef.current = hint.clearHint;
 
   // Close in-progress input dialogs if the game ends (mate/draw/resign).
   useEffect(() => {
@@ -285,29 +123,18 @@ export function GamePage() {
     setConfirm(null);
     setPendingPromotion(null);
     setSelectedSquare(null);
-    clearHint();
+    hint.clearHint();
     clearNotice();
-  }, [isGameOver, clearNotice]);
+  }, [isGameOver, hint.clearHint, clearNotice]);
 
-  // If any move is played (or the game ends), clear any stale hint.
-  useEffect(() => {
-    // Don't wipe a hint while we're actively computing it.
-    if (isHintThinking) return;
-    setHintMove(null);
-    setHintText(null);
-  }, [state.history.length, state.forcedStatus]);
+  const setupMissing = !timeControl || !orientation;
 
-  const setupPath = mode === 'vsComputer' ? '/vs-computer/setup' : '/local/setup';
-  const setupLabel = mode === 'vsComputer' ? 'Go to vs computer setup' : 'Go to local setup';
-
-  if (!timeControl || !orientation) {
+  if (setupMissing) {
     return (
       <section className="stack">
         <div className="card">
           <h2>Missing or invalid setup</h2>
-          <p className="muted">
-            This page expects setup parameters in the URL. Please go back and start a new game.
-          </p>
+          <p className="muted">This page expects setup parameters in the URL. Please go back and start a new game.</p>
           <div className="actions">
             <Link to={setupPath} className="btn btn-primary">
               {setupLabel}
@@ -325,7 +152,7 @@ export function GamePage() {
     if (candidates.length === 0) return;
 
     // Any manual move attempt consumes the hint (and cancels in-flight hint work).
-    if (isHintThinking || hintMove || hintText) clearHint();
+    if (hint.isHintThinking || hint.hintMove || hint.hintText) hint.clearHint();
 
     const promo = candidates.filter((m) => Boolean(m.promotion));
     if (promo.length > 0) {
@@ -337,78 +164,6 @@ export function GamePage() {
     // Non-promotion: there should be exactly one legal candidate.
     commitMove(candidates[0]);
     setSelectedSquare(null);
-  }
-
-  async function requestHint() {
-    if (mode !== 'vsComputer') return;
-    if (isGameOver) return;
-    if (pendingPromotion || confirm) return;
-    if (aiCtl.isThinking) return;
-    // Only compute a hint for the player's turn.
-    if (state.sideToMove !== playerColor) return;
-
-    // Cancel any previous hint request.
-    hintAbortRef.current?.abort();
-    const reqId = ++hintRequestRef.current;
-    const ac = new AbortController();
-    hintAbortRef.current = ac;
-
-    const snapshot = cloneStateSnapshot(state);
-    const snapshotHistoryLen = snapshot.history.length;
-    const snapshotSideToMove = snapshot.sideToMove;
-
-    // Use a deterministic, "best move" configuration for hints.
-    // Keep it fast even if the selected difficulty is "Hard".
-    const hintConfig = {
-      ...aiConfig,
-      difficulty: 'hard' as const,
-      maxDepth: Math.max(2, aiConfig.maxDepth ?? 1),
-      randomness: 0,
-      thinkTimeMs: Math.max(80, Math.min(250, aiConfig.thinkTimeMs ?? 180))
-    };
-
-    setIsHintThinking(true);
-    setHintMove(null);
-    setHintText(null);
-
-    try {
-      // Hints should be quick and deterministic; use the baseline bot to avoid heavy computation.
-      const res = await new HeuristicBot().getMove(
-        {
-          state: snapshot,
-          aiColor: snapshotSideToMove,
-          config: hintConfig,
-          requestId: `hint_${reqId}`
-        },
-        ac.signal
-      );
-
-      // Ignore stale results.
-      if (ac.signal.aborted) return;
-      if (hintRequestRef.current !== reqId) return;
-
-      // If the position changed (player made a move / AI moved), ignore the result.
-      const current = stateRef.current;
-      if (current.history.length !== snapshotHistoryLen) return;
-      if (current.sideToMove !== snapshotSideToMove) return;
-
-      // Validate move (defensive): it must still be legal.
-      const legal = generateLegalMoves(current);
-      const match = legal.find((m) => movesEqual(m, res.move));
-      if (!match) {
-        setIsHintThinking(false);
-        showNotice('Hint unavailable');
-        return;
-      }
-
-      setIsHintThinking(false);
-      setHintMove({ from: match.from, to: match.to });
-      setHintText(`${toAlgebraic(match.from)} → ${toAlgebraic(match.to)}`);
-    } catch (e: unknown) {
-      if (isAbortError(e)) return;
-      setIsHintThinking(false);
-      showNotice('Hint failed');
-    }
   }
 
   function handleSquareClick(square: Square) {
@@ -456,11 +211,12 @@ export function GamePage() {
 
   function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
     if (isGameOver) return;
-    if (isHintThinking || hintMove || hintText) clearHint();
+    if (hint.isHintThinking || hint.hintMove || hint.hintText) hint.clearHint();
     if (mode === 'vsComputer' && state.sideToMove === aiColor) return;
     if (aiCtl.isThinking) return;
     if (pendingPromotion) return;
     if (confirm) return;
+
     // Drag-drop is allowed even if selection is out of sync.
     if (candidates.length === 0) {
       const pseudo = generatePseudoLegalMoves(state, from).filter((m) => m.to === to);
@@ -468,6 +224,7 @@ export function GamePage() {
       setSelectedSquare(from);
       return;
     }
+
     tryApplyCandidates(from, to, candidates);
   }
 
@@ -498,11 +255,11 @@ export function GamePage() {
             <>
               <div>
                 <dt>Your side</dt>
-                <dd>{formatSideChoice(playerSideChoice)}</dd>
+                <dd>{playerSideChoice ? formatSideChoice(playerSideChoice) : '—'}</dd>
               </div>
               <div>
                 <dt>Difficulty</dt>
-                <dd>{formatDifficulty(difficulty)}</dd>
+                <dd>{difficulty ? formatDifficulty(difficulty) : '—'}</dd>
               </div>
 
               {difficulty === 'custom' && (
@@ -544,27 +301,26 @@ export function GamePage() {
           </div>
         )}
 
-        {mode === 'vsComputer' && (isHintThinking || hintText) && (
+        {mode === 'vsComputer' && (hint.isHintThinking || hint.hintText) && (
           <div
             className="notice"
-            role={isHintThinking ? 'status' : 'note'}
+            role={hint.isHintThinking ? 'status' : 'note'}
             aria-live="polite"
             aria-label="Hint"
             style={{ marginTop: 12 }}
           >
-            {isHintThinking ? (
+            {hint.isHintThinking ? (
               <>
                 <span className="spinner" aria-hidden />
                 Calculating hint…
               </>
             ) : (
               <>
-                Hint: <strong>{hintText}</strong>
+                Hint: <strong>{hint.hintText}</strong>
               </>
             )}
           </div>
         )}
-
 
         <div className="gameMeta">
           {hasClock && clock && (
@@ -614,11 +370,10 @@ export function GamePage() {
               type="button"
               className="btn btn-secondary"
               onClick={() => {
-                // If the computer is thinking, cancel it before restarting.
                 aiCtl.cancel();
-                clearHint();
+                hint.clearHint();
                 dispatch({ type: 'newGame' });
-                setGameId(makeGameId(mode));
+                restartId();
                 setSelectedSquare(null);
                 setPendingPromotion(null);
               }}
@@ -635,25 +390,23 @@ export function GamePage() {
               type="button"
               className="btn btn-secondary"
               onClick={() => {
-                if (isHintThinking || hintText) {
-                  clearHint();
+                if (hint.isHintThinking || hint.hintText) {
+                  hint.clearHint();
                 } else {
-                  void requestHint();
+                  void hint.requestHint();
                 }
               }}
               disabled={
-                // If we're already showing a hint or computing one, allow the user to cancel/hide.
-                !isHintThinking &&
-                !hintText &&
+                !hint.isHintThinking &&
+                !hint.hintText &&
                 (isGameOver ||
                   aiCtl.isThinking ||
                   Boolean(pendingPromotion) ||
                   Boolean(confirm) ||
-                  // Only allow hint on the player's turn.
                   state.sideToMove !== playerColor)
               }
             >
-              {isHintThinking ? 'Cancel hint' : hintText ? 'Hide hint' : 'Hint'}
+              {hint.isHintThinking ? 'Cancel hint' : hint.hintText ? 'Hide hint' : 'Hint'}
             </button>
           )}
 
@@ -703,7 +456,7 @@ export function GamePage() {
           orientation={orientation}
           selectedSquare={selectedSquare}
           legalMovesFromSelection={legalMovesFromSelection}
-          hintMove={hintMove}
+          hintMove={hint.hintMove}
           lastMove={lastMove}
           checkSquares={checkSquares}
           onSquareClick={handleSquareClick}
@@ -728,7 +481,7 @@ export function GamePage() {
             color={state.sideToMove}
             options={pendingPromotion.options}
             onChoose={(move) => {
-              clearHint();
+              hint.clearHint();
               commitMove(move);
               setPendingPromotion(null);
               setSelectedSquare(null);
@@ -748,10 +501,8 @@ export function GamePage() {
             cancelLabel="Cancel"
             onCancel={() => setConfirm(null)}
             onConfirm={() => {
-              // If the computer is thinking and the user ends the game, cancel the in-flight AI request
-              // immediately so it can't apply a stale move.
               aiCtl.cancel();
-              clearHint();
+              hint.clearHint();
               if (confirm.kind === 'resign') {
                 dispatch({ type: 'resign', loser: mode === 'vsComputer' ? playerColor : undefined });
               } else {
@@ -769,9 +520,9 @@ export function GamePage() {
             status={status as Exclude<typeof status, { kind: 'inProgress' }>}
             onRestart={() => {
               aiCtl.cancel();
-              clearHint();
+              hint.clearHint();
               dispatch({ type: 'newGame' });
-              setGameId(makeGameId(mode));
+              restartId();
               setSelectedSquare(null);
               setPendingPromotion(null);
               setConfirm(null);
@@ -782,7 +533,7 @@ export function GamePage() {
         )}
 
         <div className="actions">
-            <Link to={setupPath} className="btn btn-primary">
+          <Link to={setupPath} className="btn btn-primary">
             New game
           </Link>
           <Link to="/" className="btn btn-secondary">
