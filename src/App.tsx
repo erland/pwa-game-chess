@@ -11,6 +11,7 @@ import { TrainingHomePage } from './pages/TrainingHomePage';
 import { AppShell } from './ui/AppShell';
 import { TrainingShell } from './pages/training/TrainingShell';
 import { TrainingPlaceholderPage } from './pages/training/TrainingPlaceholderPage';
+import { TrainingDailyPage } from './pages/training/TrainingDailyPage';
 
 export default function App() {
   return (
@@ -42,7 +43,7 @@ export default function App() {
             />
             <Route
               path="daily"
-              element={<TrainingPlaceholderPage title="Daily" description="Daily training queue will be implemented in a later step." />}
+              element={<TrainingDailyPage />}
             />
           </Route>
           <Route path="/history" element={<HistoryPage />} />

@@ -1,4 +1,5 @@
 import type { GameRecord } from '../domain/recording/types';
+import { hasIndexedDb, openChessDb, reqToPromise, txDone, STORE_GAMES } from './chessDb';
 
 /**
  * Minimal backend-free storage layer for finished games.
@@ -7,50 +8,12 @@ import type { GameRecord } from '../domain/recording/types';
  * so the app keeps working in test environments (jsdom) and older browsers.
  */
 
-const DB_NAME = 'pwa-game-chess';
-const DB_VERSION = 1;
-const STORE = 'games';
-
 const FALLBACK_KEY = 'pwa-game-chess.games.v1';
 
-function hasIndexedDb(): boolean {
-  return typeof globalThis !== 'undefined' && typeof (globalThis as any).indexedDB !== 'undefined';
-}
-
-function reqToPromise<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('IndexedDB request failed'));
-  });
-}
-
-function txDone(tx: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
-    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
-  });
-}
-
-let dbPromise: Promise<IDBDatabase> | null = null;
-
 async function openDb(): Promise<IDBDatabase> {
-  if (!hasIndexedDb()) throw new Error('IndexedDB not available');
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: 'id' });
-        store.createIndex('finishedAtMs', 'finishedAtMs', { unique: false });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('Failed to open IndexedDB'));
-  });
-  return dbPromise;
+  return openChessDb();
 }
+
 
 // ---------- localStorage fallback ----------
 
@@ -85,8 +48,8 @@ export async function putGame(record: GameRecord): Promise<void> {
   }
 
   const db = await openDb();
-  const tx = db.transaction(STORE, 'readwrite');
-  const store = tx.objectStore(STORE);
+  const tx = db.transaction(STORE_GAMES, 'readwrite');
+  const store = tx.objectStore(STORE_GAMES);
   store.put(record);
   await txDone(tx);
 }
@@ -98,8 +61,8 @@ export async function getGame(id: string): Promise<GameRecord | null> {
   }
 
   const db = await openDb();
-  const tx = db.transaction(STORE, 'readonly');
-  const store = tx.objectStore(STORE);
+  const tx = db.transaction(STORE_GAMES, 'readonly');
+  const store = tx.objectStore(STORE_GAMES);
   const res = await reqToPromise(store.get(id));
   await txDone(tx);
   return (res as GameRecord | undefined) ?? null;
@@ -114,8 +77,8 @@ export async function deleteGame(id: string): Promise<void> {
   }
 
   const db = await openDb();
-  const tx = db.transaction(STORE, 'readwrite');
-  const store = tx.objectStore(STORE);
+  const tx = db.transaction(STORE_GAMES, 'readwrite');
+  const store = tx.objectStore(STORE_GAMES);
   store.delete(id);
   await txDone(tx);
 }
@@ -127,8 +90,8 @@ export async function listGames(): Promise<GameRecord[]> {
   }
 
   const db = await openDb();
-  const tx = db.transaction(STORE, 'readonly');
-  const store = tx.objectStore(STORE);
+  const tx = db.transaction(STORE_GAMES, 'readonly');
+  const store = tx.objectStore(STORE_GAMES);
   const all = await reqToPromise(store.getAll());
   await txDone(tx);
   return (all as GameRecord[]).sort((a, b) => b.finishedAtMs - a.finishedAtMs);
