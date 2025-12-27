@@ -23,6 +23,7 @@ export function SquareButton(props: {
       onPointerDown={handlers.onPointerDown}
       onPointerMove={handlers.onPointerMove}
       onPointerUp={handlers.onPointerUp}
+      onPointerCancel={handlers.onPointerCancel}
       disabled={disabled}
     >
       <span className="boardPiece" aria-hidden>

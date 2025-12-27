@@ -24,6 +24,7 @@ export type SquareHandlers = {
   onPointerDown: (e: PointerEvent) => void;
   onPointerMove: (e: PointerEvent) => void;
   onPointerUp: (e: PointerEvent) => void;
+  onPointerCancel: (e: PointerEvent) => void;
 };
 
 export function useBoardInteraction(args: {
@@ -56,6 +57,15 @@ export function useBoardInteraction(args: {
           if (disabled) return;
           if (!piece) return;
           if (piece.color !== state.sideToMove) return;
+
+          // Keep receiving pointer events even when leaving the square while dragging.
+          // Without pointer capture, pointermove stops firing once the pointer leaves the button.
+          try {
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          } catch {
+            // ignore (e.g. unsupported)
+          }
+          e.preventDefault();
 
           // Start tracking drag. We'll consider it a drag once pointer moves past threshold.
           // Cache legal moves for origin to make drop resolution deterministic.
@@ -100,6 +110,12 @@ export function useBoardInteraction(args: {
         onPointerUp: (e) => {
           if (!dragging) return;
           if (dragging.origin !== sq) return;
+
+          try {
+            (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+          } catch {
+            // ignore
+          }
 
           if (disabled) {
             setDragging(null);

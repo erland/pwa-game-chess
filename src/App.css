@@ -355,8 +355,11 @@ h1 {
   background: transparent;
   color: rgba(229, 231, 235, 0.98);
   min-width: 0; 
-  min-height: 0; 
+  min-height: 0;   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
+
 
 .boardSq:focus-visible {
   outline: 3px solid rgba(59, 130, 246, 0.7);
@@ -384,10 +387,14 @@ h1 {
 }
 
 .boardPiece svg,
+.boardPiece img,
 .dragPiece svg,
-.capturedGlyph svg {
+.dragPiece img,
+.capturedGlyph svg,
+.capturedGlyph img {
   width: 1em;
   height: 1em;
+  display: block;
 }
 
 .boardSq-selected {
