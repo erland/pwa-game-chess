@@ -7,7 +7,10 @@ import { GamePage } from './pages/GamePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { ReviewPage } from './pages/ReviewPage';
+import { TrainingHomePage } from './pages/TrainingHomePage';
 import { AppShell } from './ui/AppShell';
+import { TrainingShell } from './pages/training/TrainingShell';
+import { TrainingPlaceholderPage } from './pages/training/TrainingPlaceholderPage';
 
 export default function App() {
   return (
@@ -19,6 +22,29 @@ export default function App() {
           <Route path="/vs-computer/setup" element={<VsComputerSetupPage />} />
           <Route path="/local/game" element={<GamePage />} />
           <Route path="/vs-computer/game" element={<GamePage />} />
+          <Route path="/training" element={<TrainingShell />}>
+            <Route index element={<TrainingHomePage />} />
+            <Route
+              path="tactics"
+              element={<TrainingPlaceholderPage title="Tactics" description="Tactics trainer will be implemented in a later step." />}
+            />
+            <Route
+              path="openings"
+              element={<TrainingPlaceholderPage title="Openings" description="Openings trainer will be implemented in a later step." />}
+            />
+            <Route
+              path="endgames"
+              element={<TrainingPlaceholderPage title="Endgames" description="Endgames trainer will be implemented in a later step." />}
+            />
+            <Route
+              path="lessons"
+              element={<TrainingPlaceholderPage title="Lessons" description="Lessons will be implemented in a later step." />}
+            />
+            <Route
+              path="daily"
+              element={<TrainingPlaceholderPage title="Daily" description="Daily training queue will be implemented in a later step." />}
+            />
+          </Route>
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/review/:id" element={<ReviewPage />} />
           <Route path="*" element={<NotFoundPage />} />

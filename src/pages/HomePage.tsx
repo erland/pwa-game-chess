@@ -18,6 +18,16 @@ export function HomePage() {
       </div>
 
       <div className="card">
+        <h2>Training</h2>
+        <p className="muted">Tactics, openings, endgames, lessons, and daily drills.</p>
+        <div className="actions">
+          <Link to="/training" className="btn btn-secondary">
+            Open training
+          </Link>
+        </div>
+      </div>
+
+      <div className="card">
         <h2>History</h2>
         <p className="muted">See finished games saved on this device.</p>
         <div className="actions">

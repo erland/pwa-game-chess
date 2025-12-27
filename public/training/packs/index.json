@@ -1,0 +1,14 @@
+{
+  "packs": [
+    {
+      "id": "basic",
+      "title": "Basic Starter Pack",
+      "file": "basic-training-pack.json",
+      "description": "A tiny built-in pack used for early development and smoke tests.",
+      "tags": [
+        "starter",
+        "sample"
+      ]
+    }
+  ]
+}

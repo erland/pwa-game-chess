@@ -1,0 +1,45 @@
+{
+  "id": "basic",
+  "title": "Basic Starter Pack",
+  "version": 1,
+  "author": "PWA Chess",
+  "license": "CC0-1.0",
+  "tags": [
+    "starter",
+    "sample"
+  ],
+  "items": [
+    {
+      "type": "tactic",
+      "itemId": "tactic-mate-in-1-001",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen"
+      ],
+      "position": {
+        "fen": "6k1/7Q/7K/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "h7g7",
+          "san": "Qg7#"
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-basics-001",
+      "difficulty": 1,
+      "themes": [
+        "basics"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "title": "How to use training packs (coming soon)",
+      "markdown": "This is a placeholder lesson item. Later steps will render lesson content and track progress."
+    }
+  ]
+}
