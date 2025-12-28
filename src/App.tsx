@@ -13,6 +13,7 @@ import { TrainingShell } from './pages/training/TrainingShell';
 import { TrainingPlaceholderPage } from './pages/training/TrainingPlaceholderPage';
 import { TrainingDailyPage } from './pages/training/TrainingDailyPage';
 import { TrainingOpeningsPage } from './pages/training/TrainingOpeningsPage';
+import { TrainingEndgamesPage } from './pages/training/TrainingEndgamesPage';
 import { TrainingTacticsPage } from './pages/training/TrainingTacticsPage';
 import { TrainingSessionSummaryPage } from './pages/training/TrainingSessionSummaryPage';
 
@@ -39,7 +40,7 @@ export default function App() {
             />
             <Route
               path="endgames"
-              element={<TrainingPlaceholderPage title="Endgames" description="Endgames trainer will be implemented in a later step." />}
+              element={<TrainingEndgamesPage />}
             />
             <Route
               path="lessons"

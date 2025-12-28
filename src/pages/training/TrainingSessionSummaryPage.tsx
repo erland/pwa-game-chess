@@ -74,7 +74,7 @@ export function TrainingSessionSummaryPage() {
         <h2>Session summary</h2>
         <p className="muted">Failed to load session: {error}</p>
         <div className="actions">
-          <Link className="btn btn-secondary" to="/training/tactics">Back to tactics</Link>
+          <Link className="btn btn-secondary" to="/training">Back to training</Link>
         </div>
       </section>
     );
@@ -151,7 +151,7 @@ export function TrainingSessionSummaryPage() {
           <Link className="btn btn-primary" to={`/training/tactics?reviewSession=${encodeURIComponent(session.id)}`}>
             Review mistakes ({mistakes.length})
           </Link>
-          <Link className="btn btn-secondary" to="/training/tactics">Back to tactics</Link>
+          <Link className="btn btn-secondary" to="/training">Back to training</Link>
         </div>
       </div>
 
@@ -168,16 +168,29 @@ export function TrainingSessionSummaryPage() {
                     <strong>{packTitle(m.packId)}</strong> · <span className="muted">{m.itemId}</span>
                   </div>
                   <span className="muted" style={{ fontSize: 12 }}>{Math.round(m.solveMs)} ms</span>
-                </div>
-                <p className="muted" style={{ marginTop: 8 }}>
-                  Expected: <code>{m.expectedLineUci.join(' ')}</code>
-                </p>
-                {m.playedLineUci.length > 0 && (
-                  <p className="muted" style={{ marginTop: 6 }}>
-                    Played: <code>{m.playedLineUci.join(' ')}</code>
-                  </p>
-                )}
-                {m.message && (
+                </div>                {session.mode === 'tactics' ? (
+                  <>
+                    <p className="muted" style={{ marginTop: 8 }}>
+                      Expected: <code>{m.expectedLineUci.join(' ')}</code>
+                    </p>
+                    {m.playedLineUci.length > 0 && (
+                      <p className="muted" style={{ marginTop: 6 }}>
+                        Played: <code>{m.playedLineUci.join(' ')}</code>
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="muted" style={{ marginTop: 8 }}>
+                      FEN: <code>{m.fen}</code>
+                    </p>
+                    {m.playedLineUci.length > 0 && (
+                      <p className="muted" style={{ marginTop: 6 }}>
+                        Moves: <code>{m.playedLineUci.join(' ')}</code>
+                      </p>
+                    )}
+                  </>
+                )}{m.message && (
                   <p className="muted" style={{ marginTop: 6 }}>{m.message}</p>
                 )}
                 <div className="actions" style={{ marginTop: 10 }}>

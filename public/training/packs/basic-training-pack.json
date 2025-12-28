@@ -84,6 +84,30 @@
         "d7d5",
         "b1c3"
       ]
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg_mate_1",
+      "difficulty": 1,
+      "themes": [
+        "checkmate"
+      ],
+      "position": {
+        "fen": "7k/5K2/6Q1/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Mate (deliver checkmate)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg_promote_1",
+      "difficulty": 1,
+      "themes": [
+        "promotion"
+      ],
+      "position": {
+        "fen": "8/P7/8/8/8/8/8/k6K w - - 0 1"
+      },
+      "goal": "Promote a pawn"
     }
   ]
 }
