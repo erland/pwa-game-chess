@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import type { Color, GameState, Move, Square } from '../../domain/chessTypes';
 import { applyMove } from '../../domain/applyMove';
@@ -19,6 +20,14 @@ import { loadBuiltInPacks } from '../../domain/training/packLoader';
 import { makeItemKey, type TrainingItemKey } from '../../domain/training/keys';
 import { getSolutionLines, normalizeUci } from '../../domain/training/tactics';
 import { listItemStats, recordAttempt, type TrainingItemStats } from '../../storage/training/trainingStore';
+import type { TrainingMistakeRecord, TrainingSessionRecord } from '../../storage/training/trainingSessionStore';
+import {
+  addTrainingMistake,
+  makeMistakeId,
+  makeSessionId,
+  saveTrainingSession,
+  listTrainingMistakes
+} from '../../storage/training/trainingSessionStore';
 import { useToastNotice } from '../game/useToastNotice';
 
 import { ChessBoard } from '../../ui/ChessBoard';
@@ -43,6 +52,7 @@ type SolveState =
 
 type SessionState = {
   ref: TacticRef;
+  attemptToken: string;
   baseState: ReturnType<typeof fromFEN>;
   state: ReturnType<typeof fromFEN>;
   userColor: Color;
@@ -65,6 +75,19 @@ type SessionState = {
   hintLevel: 0 | ProgressiveHintLevel;
   hint: CoachHint | null;
   coachBusy: boolean;
+};
+
+type RunState = {
+  id: string;
+  startedAtMs: number;
+  attempted: number;
+  correct: number;
+  totalSolveMs: number;
+  totalCpLoss: number;
+  cpLossCount: number;
+  gradeCounts: Record<string, number>;
+  packIds: string[];
+  mistakes: TrainingMistakeRecord[];
 };
 
 function nowMs(): number {
@@ -135,11 +158,22 @@ function pickNextTactic(refs: TacticRef[], stats: TrainingItemStats[], ts: numbe
 }
 
 export function TrainingTacticsPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const reviewSessionId = searchParams.get('reviewSession');
+  const focusKey = searchParams.get('focus');
+
   const [solve, setSolve] = useState<SolveState>({ kind: 'idle' });
   const [stats, setStats] = useState<TrainingItemStats[]>([]);
   const [session, setSession] = useState<SessionState | null>(null);
+  const [run, setRun] = useState<RunState | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+
+  const attemptRecordedRef = useRef<string | null>(null);
+  const [reviewQueue, setReviewQueue] = useState<TacticRef[] | null>(null);
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [reviewMistakes, setReviewMistakes] = useState<TrainingMistakeRecord[]>([]);
 
   const { noticeText, showNotice, clearNotice } = useToastNotice(1500);
   const abortRef = useRef<AbortController | null>(null);
@@ -205,6 +239,64 @@ export function TrainingTacticsPage() {
     return out;
   }, [solve]);
 
+  // If a review session id is provided, load its mistakes and build a deterministic queue.
+  useEffect(() => {
+    let mounted = true;
+    if (!reviewSessionId) {
+      setReviewQueue(null);
+      setReviewMistakes([]);
+      setReviewIndex(0);
+      return;
+    }
+    if (solve.kind !== 'ready') return;
+
+    void (async () => {
+      try {
+        const mistakes = await listTrainingMistakes(reviewSessionId);
+        if (!mounted) return;
+        setReviewMistakes(mistakes);
+
+        const byPack = new Map<string, TrainingPack>();
+        for (const p of solve.packs) byPack.set(p.id, p);
+
+        const refs: TacticRef[] = [];
+        for (const m of mistakes) {
+          const pack = byPack.get(m.packId);
+          if (!pack) continue;
+          const item = pack.items.find((it) => isTactic(it) && it.itemId === m.itemId) as TacticItem | undefined;
+          if (!item) continue;
+          refs.push({ pack, item });
+        }
+
+        // Optional focus: bring that specific mistake to the front.
+        if (focusKey) {
+          const idx = mistakes.findIndex((m) => m.itemKey === focusKey);
+          if (idx >= 0) {
+            const wanted = refs.find((r) => makeItemKey(r.pack.id, r.item.itemId) === focusKey);
+            if (wanted) {
+              const filtered = refs.filter((r) => makeItemKey(r.pack.id, r.item.itemId) !== focusKey);
+              refs.splice(0, refs.length, wanted, ...filtered);
+            }
+          }
+        }
+
+        setReviewQueue(refs);
+        setReviewIndex(0);
+        // While reviewing, we don't want to mix with a normal run.
+        setRun(null);
+      } catch {
+        if (!mounted) return;
+        setReviewQueue([]);
+        setReviewMistakes([]);
+        setReviewIndex(0);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [reviewSessionId, focusKey, solve]);
+
   const checkSquares = useMemo(() => {
     if (!session) return [] as Square[];
     const stm = session.state.sideToMove;
@@ -237,10 +329,12 @@ export function TrainingTacticsPage() {
 
     const baseState = fromFEN(ref.item.position.fen);
     const solutionLines = getSolutionLines(ref.item);
+    const attemptToken = makeSessionId();
     setSelectedSquare(null);
     setPendingPromotion(null);
     setSession({
       ref,
+      attemptToken,
       baseState,
       state: baseState,
       userColor: baseState.sideToMove,
@@ -261,6 +355,39 @@ export function TrainingTacticsPage() {
   }
 
   function startNext() {
+    // Review mode: play through the mistakes captured in a previous session.
+    if (reviewSessionId) {
+      if (!reviewQueue || reviewQueue.length === 0) {
+        showNotice('No mistakes to review');
+        return;
+      }
+      if (reviewIndex >= reviewQueue.length) {
+        showNotice('Reached the end of the mistakes list');
+        return;
+      }
+      const ref = reviewQueue[reviewIndex];
+      setReviewIndex((i) => i + 1);
+      startSession(ref);
+      return;
+    }
+
+    // Normal mode: ensure we have an active run.
+    if (!run) {
+      setRun({
+        id: makeSessionId(),
+        startedAtMs: Date.now(),
+        attempted: 0,
+        correct: 0,
+        totalSolveMs: 0,
+        totalCpLoss: 0,
+        cpLossCount: 0,
+        gradeCounts: {},
+        packIds: [],
+        mistakes: []
+      });
+      attemptRecordedRef.current = null;
+    }
+
     if (tacticRefs.length === 0) return;
     const next = pickNextTactic(tacticRefs, stats, Date.now());
     if (!next) return;
@@ -275,6 +402,7 @@ export function TrainingTacticsPage() {
     setPendingPromotion(null);
     setSession({
       ...session,
+      attemptToken: makeSessionId(),
       state: session.baseState,
       activeLine: null,
       ply: 0,
@@ -545,6 +673,103 @@ export function TrainingTacticsPage() {
     return `Move ${Math.min(totalUserMoves, nextUserMoveIndex)} / ${totalUserMoves}`;
   }, [session, displayedLine]);
 
+  // When a puzzle ends, update the current run summary (only in normal mode).
+  useEffect(() => {
+    if (!session || !session.result) return;
+    if (reviewSessionId) return;
+    if (!run) return;
+
+    const token = session.attemptToken;
+    if (attemptRecordedRef.current === token) return;
+    attemptRecordedRef.current = token;
+
+    const solveMs = Math.max(0, Math.round(session.result.solveMs || 0));
+    const ok = !!session.result.correct;
+
+    // Best-effort cp loss aggregation for this attempt (sum of user move grades).
+    const grades = session.userMoveGrades ?? [];
+    const cps = grades.map((g) => (Number.isFinite(g.cpLoss) ? (g.cpLoss as number) : NaN)).filter((n) => Number.isFinite(n));
+    const cpSum = cps.reduce((a, b) => a + b, 0);
+    const cpCount = cps.length;
+    const label = session.grade?.label ?? (ok ? 'OK' : 'Fail');
+
+    setRun((prev) => {
+      if (!prev) return prev;
+      const packs = prev.packIds.includes(session.ref.pack.id) ? prev.packIds : [...prev.packIds, session.ref.pack.id];
+      const gradeCounts = { ...prev.gradeCounts, [label]: (prev.gradeCounts[label] || 0) + 1 };
+      let mistakes = prev.mistakes;
+      if (!ok) {
+        const itemKey = makeItemKey(session.ref.pack.id, session.ref.item.itemId);
+        const expectedLine = (session.activeLine ?? session.solutionLines[0] ?? []).map(normalizeUci);
+        const playedLine = (session.result?.playedLineUci ?? []).map(normalizeUci);
+        const createdAtMs = Date.now();
+        const m: TrainingMistakeRecord = {
+          id: makeMistakeId(prev.id, itemKey, createdAtMs),
+          sessionId: prev.id,
+          itemKey,
+          packId: session.ref.pack.id,
+          itemId: session.ref.item.itemId,
+          fen: session.ref.item.position.fen,
+          expectedLineUci: expectedLine,
+          playedLineUci: playedLine,
+          solveMs,
+          createdAtMs,
+          message: session.result?.message ?? ''
+        };
+        mistakes = [...mistakes, m];
+      }
+
+      return {
+        ...prev,
+        attempted: prev.attempted + 1,
+        correct: prev.correct + (ok ? 1 : 0),
+        totalSolveMs: prev.totalSolveMs + solveMs,
+        totalCpLoss: prev.totalCpLoss + (cpCount > 0 ? cpSum : 0),
+        cpLossCount: prev.cpLossCount + cpCount,
+        gradeCounts,
+        packIds: packs,
+        mistakes
+      };
+    });
+  }, [session?.result, session?.attemptToken, reviewSessionId, run]);
+
+  async function endRun() {
+    if (!run) return;
+    const endedAtMs = Date.now();
+    const attempted = run.attempted;
+    const avgSolveMs = attempted > 0 ? Math.round(run.totalSolveMs / attempted) : 0;
+    const avgCpLoss = run.cpLossCount > 0 ? Math.round(run.totalCpLoss / run.cpLossCount) : 0;
+
+    const record: TrainingSessionRecord = {
+      id: run.id,
+      mode: 'tactics',
+      startedAtMs: run.startedAtMs,
+      endedAtMs,
+      attempted: run.attempted,
+      correct: run.correct,
+      totalSolveMs: run.totalSolveMs,
+      avgSolveMs,
+      totalCpLoss: run.totalCpLoss,
+      avgCpLoss,
+      gradeCounts: run.gradeCounts,
+      packIds: run.packIds
+    };
+
+    try {
+      await saveTrainingSession(record);
+      for (const m of run.mistakes) {
+        await addTrainingMistake(m);
+      }
+      setRun(null);
+      setSession(null);
+      setSelectedSquare(null);
+      setPendingPromotion(null);
+      navigate(`/training/session/${encodeURIComponent(record.id)}`);
+    } catch {
+      showNotice('Failed to save session');
+    }
+  }
+
   async function giveUpShowLine() {
     if (!session || session.result) return;
     const solveMs = Math.max(0, Math.round(nowMs() - session.startedAtMs));
@@ -569,6 +794,14 @@ export function TrainingTacticsPage() {
       // ignore
     }
   }
+
+  const startLabel = reviewSessionId
+    ? (reviewIndex === 0 ? 'Start review' : 'Next mistake')
+    : (run && run.attempted > 0 ? 'Next tactic' : 'Start tactic');
+
+  const startDisabled = reviewSessionId
+    ? (!reviewQueue || reviewIndex >= reviewQueue.length)
+    : (tacticRefs.length === 0);
 
   return (
     <section className="stack">
@@ -596,18 +829,43 @@ export function TrainingTacticsPage() {
             )}
 
             <div className="actions" style={{ marginTop: 8 }}>
-              <button type="button" className="btn btn-primary" onClick={startNext} disabled={tacticRefs.length === 0}>
-                Start tactic
+              <button type="button" className="btn btn-primary" onClick={startNext} disabled={startDisabled}>
+                {startLabel}
               </button>
               {session && (
                 <button type="button" className="btn btn-secondary" onClick={tryAgain} disabled={!session || !!session.result}>
                   Reset
                 </button>
               )}
+              {!reviewSessionId && run && run.attempted > 0 && (
+                <button type="button" className="btn btn-secondary" onClick={endRun}>
+                  End session
+                </button>
+              )}
+              {reviewSessionId && (
+                <button type="button" className="btn btn-secondary" onClick={() => navigate(`/training/session/${encodeURIComponent(reviewSessionId)}`)}>
+                  Session summary
+                </button>
+              )}
             </div>
 
             <p className="muted" style={{ marginTop: 8 }}>
-              Available tactics: <strong>{tacticRefs.length}</strong>
+              {reviewSessionId ? (
+                <>
+                  Reviewing mistakes: <strong>{reviewMistakes.length}</strong> · Progress: <strong>{Math.min(reviewIndex, reviewMistakes.length)}</strong> /{' '}
+                  <strong>{reviewMistakes.length}</strong>
+                </>
+              ) : (
+                <>
+                  Available tactics: <strong>{tacticRefs.length}</strong>
+                  {run && run.attempted > 0 && (
+                    <>
+                      {' '}
+                      · Session: <strong>{run.correct}</strong> / <strong>{run.attempted}</strong>
+                    </>
+                  )}
+                </>
+              )}
             </p>
           </>
         )}

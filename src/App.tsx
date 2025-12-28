@@ -13,6 +13,7 @@ import { TrainingShell } from './pages/training/TrainingShell';
 import { TrainingPlaceholderPage } from './pages/training/TrainingPlaceholderPage';
 import { TrainingDailyPage } from './pages/training/TrainingDailyPage';
 import { TrainingTacticsPage } from './pages/training/TrainingTacticsPage';
+import { TrainingSessionSummaryPage } from './pages/training/TrainingSessionSummaryPage';
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/vs-computer/game" element={<GamePage />} />
           <Route path="/training" element={<TrainingShell />}>
             <Route index element={<TrainingHomePage />} />
+            <Route path="session/:id" element={<TrainingSessionSummaryPage />} />
             <Route
               path="tactics"
               element={<TrainingTacticsPage />}

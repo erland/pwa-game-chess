@@ -7,11 +7,13 @@
  */
 
 export const CHESS_DB_NAME = 'pwa-game-chess';
-export const CHESS_DB_VERSION = 2;
+export const CHESS_DB_VERSION = 3;
 
 export const STORE_GAMES = 'games';
 export const STORE_TRAINING_ITEM_STATS = 'trainingItemStats';
 export const STORE_TRAINING_DAILY_QUEUE = 'trainingDailyQueue';
+export const STORE_TRAINING_SESSIONS = 'trainingSessions';
+export const STORE_TRAINING_SESSION_MISTAKES = 'trainingSessionMistakes';
 
 export function hasIndexedDb(): boolean {
   return typeof globalThis !== 'undefined' && typeof (globalThis as any).indexedDB !== 'undefined';
@@ -83,6 +85,40 @@ export async function openChessDb(): Promise<IDBDatabase> {
         const store = req.transaction?.objectStore(STORE_TRAINING_DAILY_QUEUE);
         if (store && !store.indexNames.contains('generatedAtMs')) {
           store.createIndex('generatedAtMs', 'generatedAtMs', { unique: false });
+        }
+      }
+
+      // ---- Training sessions (aggregated summaries) ----
+      if (!db.objectStoreNames.contains(STORE_TRAINING_SESSIONS)) {
+        const store = db.createObjectStore(STORE_TRAINING_SESSIONS, { keyPath: 'id' });
+        store.createIndex('endedAtMs', 'endedAtMs', { unique: false });
+        store.createIndex('startedAtMs', 'startedAtMs', { unique: false });
+        store.createIndex('mode', 'mode', { unique: false });
+      } else {
+        const store = req.transaction?.objectStore(STORE_TRAINING_SESSIONS);
+        if (store && !store.indexNames.contains('endedAtMs')) {
+          store.createIndex('endedAtMs', 'endedAtMs', { unique: false });
+        }
+        if (store && !store.indexNames.contains('startedAtMs')) {
+          store.createIndex('startedAtMs', 'startedAtMs', { unique: false });
+        }
+        if (store && !store.indexNames.contains('mode')) {
+          store.createIndex('mode', 'mode', { unique: false });
+        }
+      }
+
+      // ---- Training session mistakes ----
+      if (!db.objectStoreNames.contains(STORE_TRAINING_SESSION_MISTAKES)) {
+        const store = db.createObjectStore(STORE_TRAINING_SESSION_MISTAKES, { keyPath: 'id' });
+        store.createIndex('sessionId', 'sessionId', { unique: false });
+        store.createIndex('createdAtMs', 'createdAtMs', { unique: false });
+      } else {
+        const store = req.transaction?.objectStore(STORE_TRAINING_SESSION_MISTAKES);
+        if (store && !store.indexNames.contains('sessionId')) {
+          store.createIndex('sessionId', 'sessionId', { unique: false });
+        }
+        if (store && !store.indexNames.contains('createdAtMs')) {
+          store.createIndex('createdAtMs', 'createdAtMs', { unique: false });
         }
       }
     };
