@@ -11,13 +11,17 @@ import { loadBuiltInPacks } from '../../domain/training/packLoader';
 import type { OpeningLineItem, TrainingPack } from '../../domain/training/schema';
 import { parseItemKey, type TrainingItemKey } from '../../domain/training/keys';
 import { isUciLike, normalizeUci, uciToLegalMove, autoPlayOpponentReplies } from '../../domain/training/openingsDrill';
+import { buildOpeningNodes, pickNextOpeningNode, type OpeningNodeRef } from '../../domain/training/openingNodes';
 
 import { ChessBoard } from '../../ui/ChessBoard';
 import type { Orientation } from '../../domain/localSetup';
 
 import { listItemStats, recordAttempt, type TrainingItemStats } from '../../storage/training/trainingStore';
+import { listOpeningNodeStats, recordOpeningNodeAttempt, type OpeningNodeStats } from '../../storage/training/openingNodeStore';
 
 type Status = 'idle' | 'loading' | 'ready' | 'error';
+
+type DrillMode = 'nodes' | 'line';
 
 type OpeningRef = {
   key: TrainingItemKey;
@@ -113,6 +117,8 @@ export function TrainingOpeningsPage() {
   const query = useQuery();
   const focusParam = query.get('focus');
   const focusKey = focusParam ? parseItemKey(focusParam) : null;
+  const focusNodeParam = query.get('focusNode');
+  const focusNodeKey = focusNodeParam ? String(focusNodeParam) : null;
 
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -120,10 +126,14 @@ export function TrainingOpeningsPage() {
 
   const [refs, setRefs] = useState<OpeningRef[]>([]);
   const [stats, setStats] = useState<TrainingItemStats[]>([]);
+  const [nodeStats, setNodeStats] = useState<OpeningNodeStats[]>([]);
 
   const [drillColor, setDrillColor] = useState<Color>('w');
 
+  const [mode, setMode] = useState<DrillMode>('nodes');
+
   const [current, setCurrent] = useState<OpeningRef | null>(null);
+  const [currentNode, setCurrentNode] = useState<OpeningNodeRef | null>(null);
   const [initialFen, setInitialFen] = useState<string | null>(null);
   const [state, setState] = useState<GameState | null>(null);
   const [index, setIndex] = useState<number>(0);
@@ -140,14 +150,15 @@ export function TrainingOpeningsPage() {
     setStatus('loading');
     setError(null);
 
-    Promise.all([loadBuiltInPacks(), listItemStats()])
-      .then(([packsRes, statsRes]) => {
+    Promise.all([loadBuiltInPacks(), listItemStats(), listOpeningNodeStats()])
+      .then(([packsRes, statsRes, nodeStatsRes]) => {
         if (!alive) return;
 
         const br = buildOpeningRefs(packsRes.packs);
         setRefs(br.refs);
         setWarnings(br.warnings);
         setStats(statsRes);
+        setNodeStats(nodeStatsRes);
 
         setStatus('ready');
       })
@@ -164,15 +175,40 @@ export function TrainingOpeningsPage() {
 
   const orientation: Orientation = drillColor;
 
+  const openingNodes = useMemo(() => {
+    if (refs.length === 0) return { nodes: [] as OpeningNodeRef[], warnings: [] as string[] };
+
+    const nodes: OpeningNodeRef[] = [];
+    const warns: string[] = [];
+
+    for (const r of refs) {
+      const res = buildOpeningNodes({
+        packId: r.packId,
+        packTitle: r.packTitle,
+        itemId: r.item.itemId,
+        name: r.item.name ?? r.item.itemId,
+        startFen: r.item.position.fen,
+        lineUci: r.lineUci,
+        userColor: drillColor
+      });
+      nodes.push(...res.nodes);
+      warns.push(...res.warnings);
+    }
+
+    nodes.sort((a, b) => a.key.localeCompare(b.key));
+    return { nodes, warnings: warns };
+  }, [refs, drillColor]);
+
   const legalMovesFromSelection = useMemo(() => {
     if (!state || selectedSquare === null) return [];
     return generateLegalMoves(state, selectedSquare);
   }, [state, selectedSquare]);
 
   const expectedUci = useMemo(() => {
+    if (mode === 'nodes') return currentNode?.expectedUci ?? null;
     if (!current) return null;
     return current.lineUci[index] ?? null;
-  }, [current, index]);
+  }, [mode, currentNode, current, index]);
 
   const expectedMove = useMemo(() => {
     if (!state || !expectedUci) return null;
@@ -186,6 +222,27 @@ export function TrainingOpeningsPage() {
   }, [showHint, expectedMove]);
 
   function resetToInitial() {
+    if (mode === 'nodes') {
+      if (!currentNode) return;
+      const fen = currentNode.fen;
+      const parsed = tryParseFEN(fen);
+      if (!parsed.ok) {
+        setResultMsg(`Invalid FEN: ${parsed.error}`);
+        setState(null);
+        return;
+      }
+
+      setInitialFen(fen);
+      setState(parsed.value);
+      setIndex(currentNode.plyIndex);
+      setSelectedSquare(null);
+      setShowHint(false);
+      setResultMsg(null);
+      setRunning(true);
+      startedAtRef.current = Date.now();
+      return;
+    }
+
     if (!current) return;
     const fen = current.item.position.fen;
     const parsed = tryParseFEN(fen);
@@ -241,7 +298,73 @@ export function TrainingOpeningsPage() {
     }
   }
 
+  async function finishNodeAttempt(success: boolean, message: string) {
+    setRunning(false);
+    setShowHint(false);
+    setResultMsg(message);
+
+    if (!currentNode) return;
+    const solveMs = Math.max(0, Date.now() - (startedAtRef.current || Date.now()));
+    const nextStats = await recordOpeningNodeAttempt({
+      key: currentNode.key,
+      packId: currentNode.packId,
+      itemId: currentNode.itemId,
+      plyIndex: currentNode.plyIndex,
+      success,
+      solveMs
+    });
+
+    setNodeStats((prev) => {
+      const out = prev.filter((s) => s.key !== nextStats.key);
+      out.push(nextStats);
+      out.sort((a, b) => a.key.localeCompare(b.key));
+      return out;
+    });
+  }
+
+  function startNode(chosenNode: OpeningNodeRef) {
+    setCurrentNode(chosenNode);
+    setCurrent(null);
+    setResultMsg(null);
+
+    const parsed = tryParseFEN(chosenNode.fen);
+    if (!parsed.ok) {
+      setResultMsg(`Invalid FEN: ${parsed.error}`);
+      setState(null);
+      setRunning(false);
+      return;
+    }
+
+    setInitialFen(chosenNode.fen);
+    setState(parsed.value);
+    setIndex(chosenNode.plyIndex);
+    setSelectedSquare(null);
+    setShowHint(false);
+    setRunning(true);
+    startedAtRef.current = Date.now();
+  }
+
   function start(ref?: OpeningRef | null) {
+    if (mode === 'nodes') {
+      const ts = Date.now();
+      let candidates = openingNodes.nodes;
+
+      // If a line was explicitly chosen, drill nodes within that line.
+      if (ref) {
+        candidates = openingNodes.nodes.filter((n) => n.packId === ref.packId && n.itemId === ref.item.itemId);
+      }
+
+      const chosenNode = pickNextOpeningNode(candidates, nodeStats, ts, focusNodeKey);
+
+      if (!chosenNode) {
+        setResultMsg('No opening nodes found (no UCI opening lines in packs).');
+        return;
+      }
+
+      startNode(chosenNode);
+      return;
+    }
+
     const ts = Date.now();
     const chosen = ref ?? pickNextOpening(refs, stats, ts, focusKey);
     if (!chosen) {
@@ -249,6 +372,7 @@ export function TrainingOpeningsPage() {
       return;
     }
     setCurrent(chosen);
+    setCurrentNode(null);
     setResultMsg(null);
 
     // Default drill color:
@@ -356,10 +480,58 @@ export function TrainingOpeningsPage() {
     }
   }
 
+  function onMoveAttemptNode(from: Square, to: Square, candidates: Move[]) {
+    if (!running || !state || !currentNode) return;
+    if (state.sideToMove !== drillColor) return;
+
+    if (candidates.length === 0) {
+      setResultMsg('Illegal move');
+      setSelectedSquare(from);
+      return;
+    }
+
+    const expected = expectedUci;
+    if (!expected) {
+      void finishNodeAttempt(true, 'Done.');
+      return;
+    }
+
+    const expectedNorm = normalizeUci(expected);
+    const chosenMove = candidates.find((m) => normalizeUci(moveToUci(m)) === expectedNorm) ?? candidates[0];
+    const played = normalizeUci(moveToUci(chosenMove));
+
+    if (played !== expectedNorm) {
+      void finishNodeAttempt(false, `Incorrect. Expected ${expectedNorm}. You played ${played}.`);
+      return;
+    }
+
+    let nextState = applyMove(state, chosenMove);
+    const nextIndex = currentNode.plyIndex + 1;
+
+    // Auto-play opponent replies for preview (until it's your turn again).
+    const auto = autoPlayOpponentReplies(nextState, currentNode.lineUci, nextIndex, drillColor);
+    if (auto.error) {
+      setState(auto.state);
+      void finishNodeAttempt(false, auto.error);
+      return;
+    }
+    nextState = auto.state;
+
+    setState(nextState);
+    setSelectedSquare(null);
+    setShowHint(false);
+    void finishNodeAttempt(true, 'Correct!');
+  }
+
   const statsForCurrent = useMemo(() => {
     if (!current) return null;
     return stats.find((s) => s.key === current.key) ?? null;
   }, [stats, current]);
+
+  const statsForCurrentNode = useMemo(() => {
+    if (!currentNode) return null;
+    return nodeStats.find((s) => s.key === currentNode.key) ?? null;
+  }, [nodeStats, currentNode]);
 
   return (
     <section className="stack">
@@ -367,7 +539,7 @@ export function TrainingOpeningsPage() {
         <div>
           <h2 style={{ margin: 0 }}>Openings</h2>
           <div className="muted" style={{ marginTop: 6 }}>
-            Repertoire drill (v1). You play your side’s moves; opponent replies are auto-played from the line.
+            Repertoire drill (v2). Node-based spaced repetition (decision points) + optional full-line drill.
           </div>
         </div>
         <div className="row" style={{ gap: 8 }}>
@@ -389,6 +561,20 @@ export function TrainingOpeningsPage() {
         </div>
       )}
 
+      {status === 'ready' && openingNodes.warnings.length > 0 && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Line validation warnings</h3>
+          <ul>
+            {openingNodes.warnings.slice(0, 10).map((w, i) => (
+              <li key={i} className="muted">{w}</li>
+            ))}
+          </ul>
+          {openingNodes.warnings.length > 10 && (
+            <div className="muted" style={{ fontSize: 12 }}>…and {openingNodes.warnings.length - 10} more</div>
+          )}
+        </div>
+      )}
+
       {status === 'ready' && refs.length === 0 && (
         <div className="card">
           <p className="muted">
@@ -407,6 +593,11 @@ export function TrainingOpeningsPage() {
               </div>
             </div>
             <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+              <label className="muted" style={{ fontSize: 12 }}>Mode:</label>
+              <select value={mode} onChange={(e) => setMode(e.target.value as DrillMode)}>
+                <option value="nodes">Nodes (spaced repetition)</option>
+                <option value="line">Full line (classic)</option>
+              </select>
               <label className="muted" style={{ fontSize: 12 }}>Drill as:</label>
               <select
                 value={drillColor}
@@ -420,10 +611,85 @@ export function TrainingOpeningsPage() {
               </button>
             </div>
           </div>
+
+          {mode === 'nodes' && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+              Nodes available for this color: {openingNodes.nodes.length} • Learned: {nodeStats.filter((s) => (s.attempts || 0) > 0).length}
+            </div>
+          )}
         </div>
       )}
 
-      {current && state && (
+      {mode === 'nodes' && currentNode && state && (
+        <div className="card">
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div>
+              <h3 style={{ marginTop: 0, marginBottom: 4 }}>
+                {currentNode.packTitle} • {currentNode.name}
+              </h3>
+              <div className="muted" style={{ fontSize: 12 }}>
+                Node: {currentNode.key} • Expected: {currentNode.expectedUci}
+              </div>
+              {statsForCurrentNode && (
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  Attempts: {statsForCurrentNode.attempts} • Successes: {statsForCurrentNode.successes} • Next due:{' '}
+                  {statsForCurrentNode.nextDueAtMs ? new Date(statsForCurrentNode.nextDueAtMs).toLocaleDateString() : '—'}
+                </div>
+              )}
+            </div>
+
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn btn-secondary" type="button" onClick={() => setShowHint((v) => !v)} disabled={!running || state.sideToMove !== drillColor}>
+                {showHint ? 'Hide hint' : 'Hint'}
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={resetToInitial}>
+                Reset
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={() => setCurrentNode(null)}>
+                Stop
+              </button>
+            </div>
+          </div>
+
+          {resultMsg && (
+            <div className="card" style={{ marginTop: 10 }}>
+              <strong>Result</strong>
+              <div className="muted" style={{ marginTop: 6 }}>{resultMsg}</div>
+              <div className="row" style={{ gap: 8, marginTop: 10 }}>
+                <button className="btn btn-primary" type="button" onClick={() => start(null)}>Next node</button>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  onClick={() => {
+                    if (currentNode) startNode(currentNode);
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 12 }}>
+            <ChessBoard
+              state={state}
+              orientation={orientation}
+              selectedSquare={selectedSquare}
+              legalMovesFromSelection={legalMovesFromSelection}
+              hintMove={hintMove}
+              onSquareClick={onSquareClick}
+              onMoveAttempt={onMoveAttemptNode}
+              disabled={!running || state.sideToMove !== drillColor}
+            />
+          </div>
+
+          <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+            Start FEN: {initialFen ?? '—'}
+          </div>
+        </div>
+      )}
+
+      {mode === 'line' && current && state && (
         <div className="card">
           <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
             <div>

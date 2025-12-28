@@ -7,13 +7,14 @@
  */
 
 export const CHESS_DB_NAME = 'pwa-game-chess';
-export const CHESS_DB_VERSION = 3;
+export const CHESS_DB_VERSION = 4;
 
 export const STORE_GAMES = 'games';
 export const STORE_TRAINING_ITEM_STATS = 'trainingItemStats';
 export const STORE_TRAINING_DAILY_QUEUE = 'trainingDailyQueue';
 export const STORE_TRAINING_SESSIONS = 'trainingSessions';
 export const STORE_TRAINING_SESSION_MISTAKES = 'trainingSessionMistakes';
+export const STORE_TRAINING_OPENING_NODE_STATS = 'trainingOpeningNodeStats';
 
 export function hasIndexedDb(): boolean {
   return typeof globalThis !== 'undefined' && typeof (globalThis as any).indexedDB !== 'undefined';
@@ -119,6 +120,25 @@ export async function openChessDb(): Promise<IDBDatabase> {
         }
         if (store && !store.indexNames.contains('createdAtMs')) {
           store.createIndex('createdAtMs', 'createdAtMs', { unique: false });
+        }
+      }
+
+      // ---- Opening node stats (spaced repetition per decision point) ----
+      if (!db.objectStoreNames.contains(STORE_TRAINING_OPENING_NODE_STATS)) {
+        const store = db.createObjectStore(STORE_TRAINING_OPENING_NODE_STATS, { keyPath: 'key' });
+        store.createIndex('nextDueAtMs', 'nextDueAtMs', { unique: false });
+        store.createIndex('lastSeenAtMs', 'lastSeenAtMs', { unique: false });
+        store.createIndex('updatedAtMs', 'updatedAtMs', { unique: false });
+      } else {
+        const store = req.transaction?.objectStore(STORE_TRAINING_OPENING_NODE_STATS);
+        if (store && !store.indexNames.contains('nextDueAtMs')) {
+          store.createIndex('nextDueAtMs', 'nextDueAtMs', { unique: false });
+        }
+        if (store && !store.indexNames.contains('lastSeenAtMs')) {
+          store.createIndex('lastSeenAtMs', 'lastSeenAtMs', { unique: false });
+        }
+        if (store && !store.indexNames.contains('updatedAtMs')) {
+          store.createIndex('updatedAtMs', 'updatedAtMs', { unique: false });
         }
       }
     };
