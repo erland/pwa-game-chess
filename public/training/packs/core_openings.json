@@ -1,0 +1,507 @@
+{
+  "id": "core_openings",
+  "title": "Core Openings Pack (Essential Lines)",
+  "version": 1,
+  "author": "PWA Chess",
+  "license": "CC0-1.0",
+  "tags": [
+    "openings",
+    "repertoire",
+    "essentials"
+  ],
+  "items": [
+    {
+      "type": "openingLine",
+      "itemId": "opening-italian-main",
+      "difficulty": 1,
+      "themes": [
+        "opening",
+        "e4",
+        "italian"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Italian Game \u2013 Giuoco Piano",
+      "line": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1c4",
+        "f8c5",
+        "c2c3",
+        "g8f6",
+        "d2d3",
+        "d7d6"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-ruy-lopez",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "e4",
+        "ruy-lopez"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Ruy Lopez \u2013 Morphy Defense",
+      "line": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "a7a6",
+        "b5a4",
+        "g8f6",
+        "e1g1",
+        "f8e7"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-scotch",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "e4",
+        "scotch"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Scotch Game (main)",
+      "line": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "d2d4",
+        "e5d4",
+        "f3d4",
+        "g8f6"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-sicilian-najdorf",
+      "difficulty": 3,
+      "themes": [
+        "opening",
+        "e4",
+        "sicilian",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Sicilian Defense \u2013 Najdorf setup",
+      "line": [
+        "e2e4",
+        "c7c5",
+        "g1f3",
+        "d7d6",
+        "d2d4",
+        "c5d4",
+        "f3d4",
+        "g8f6",
+        "b1c3",
+        "a7a6"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-french-classical",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "e4",
+        "french",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "French Defense \u2013 Classical",
+      "line": [
+        "e2e4",
+        "e7e6",
+        "d2d4",
+        "d7d5",
+        "b1c3",
+        "g8f6",
+        "e4e5",
+        "f6d7"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-caro-kann-classic",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "e4",
+        "caro-kann",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Caro-Kann \u2013 Classical",
+      "line": [
+        "e2e4",
+        "c7c6",
+        "d2d4",
+        "d7d5",
+        "b1c3",
+        "d5e4",
+        "c3e4",
+        "b8d7"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-queens-gambit",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "d4",
+        "queens-gambit"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Queen's Gambit Declined \u2013 Orthodox",
+      "line": [
+        "d2d4",
+        "d7d5",
+        "c2c4",
+        "e7e6",
+        "b1c3",
+        "g8f6",
+        "c1g5",
+        "f8e7"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-slav",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "d4",
+        "slav",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Slav Defense \u2013 Main line",
+      "line": [
+        "d2d4",
+        "d7d5",
+        "c2c4",
+        "c7c6",
+        "g1f3",
+        "g8f6",
+        "b1c3",
+        "d5c4"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-kings-indian",
+      "difficulty": 3,
+      "themes": [
+        "opening",
+        "d4",
+        "kings-indian",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "King's Indian Defense \u2013 Classical setup",
+      "line": [
+        "d2d4",
+        "g8f6",
+        "c2c4",
+        "g7g6",
+        "b1c3",
+        "f8g7",
+        "e2e4",
+        "d7d6",
+        "g1f3",
+        "e8g8"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-london",
+      "difficulty": 1,
+      "themes": [
+        "opening",
+        "d4",
+        "london"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "London System \u2013 Basic",
+      "line": [
+        "d2d4",
+        "d7d5",
+        "g1f3",
+        "g8f6",
+        "c1f4",
+        "e7e6",
+        "e2e3",
+        "c7c5"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-english",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "c4",
+        "english"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "English Opening \u2013 Symmetrical",
+      "line": [
+        "c2c4",
+        "c7c5",
+        "g1f3",
+        "g8f6",
+        "b1c3",
+        "b8c6",
+        "g2g3",
+        "g7g6"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-pirc",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "e4",
+        "pirc",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Pirc Defense \u2013 Classical",
+      "line": [
+        "e2e4",
+        "d7d6",
+        "d2d4",
+        "g8f6",
+        "b1c3",
+        "g7g6",
+        "g1f3",
+        "f8g7"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-scandinavian",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "e4",
+        "scandinavian",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Scandinavian Defense",
+      "line": [
+        "e2e4",
+        "d7d5",
+        "e4d5",
+        "d8d5",
+        "b1c3",
+        "d5a5"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-italian-evans-declined",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "e4",
+        "italian"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Italian \u2013 Two Knights (simple)",
+      "line": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1c4",
+        "g8f6",
+        "d2d3",
+        "f8c5"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-ruy-berlin",
+      "difficulty": 3,
+      "themes": [
+        "opening",
+        "e4",
+        "ruy-lopez",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Ruy Lopez \u2013 Berlin Defense",
+      "line": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "g8f6",
+        "e1g1",
+        "f6e4"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-queens-indian",
+      "difficulty": 3,
+      "themes": [
+        "opening",
+        "d4",
+        "queens-indian",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Queen's Indian setup",
+      "line": [
+        "d2d4",
+        "g8f6",
+        "c2c4",
+        "e7e6",
+        "g1f3",
+        "b7b6",
+        "b1c3",
+        "f8b4"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-nimzo",
+      "difficulty": 3,
+      "themes": [
+        "opening",
+        "d4",
+        "nimzo",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Nimzo-Indian \u2013 Basic",
+      "line": [
+        "d2d4",
+        "g8f6",
+        "c2c4",
+        "e7e6",
+        "b1c3",
+        "f8b4"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-grunfeld",
+      "difficulty": 4,
+      "themes": [
+        "opening",
+        "d4",
+        "grunfeld",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Gr\u00fcnfeld Defense \u2013 Basic",
+      "line": [
+        "d2d4",
+        "g8f6",
+        "c2c4",
+        "g7g6",
+        "b1c3",
+        "d7d5"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-dutch",
+      "difficulty": 3,
+      "themes": [
+        "opening",
+        "d4",
+        "dutch",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Dutch Defense \u2013 Leningrad setup",
+      "line": [
+        "d2d4",
+        "f7f5",
+        "c2c4",
+        "g8f6",
+        "g2g3",
+        "g7g6",
+        "f1g2",
+        "f8g7"
+      ]
+    },
+    {
+      "type": "openingLine",
+      "itemId": "opening-qga",
+      "difficulty": 2,
+      "themes": [
+        "opening",
+        "d4",
+        "queens-gambit",
+        "as-black"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "name": "Queen's Gambit Accepted (basic)",
+      "line": [
+        "d2d4",
+        "d7d5",
+        "c2c4",
+        "d5c4",
+        "e2e3",
+        "b7b5"
+      ]
+    }
+  ]
+}

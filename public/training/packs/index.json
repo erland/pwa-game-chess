@@ -9,6 +9,47 @@
         "starter",
         "sample"
       ]
+    },
+    {
+      "id": "core_lessons",
+      "title": "Core Lessons Pack (Curriculum)",
+      "file": "core_lessons.json",
+      "description": "A structured curriculum of concepts (opening principles, tactics, endgames, calculation).",
+      "tags": [
+        "lessons",
+        "curriculum"
+      ]
+    },
+    {
+      "id": "core_tactics",
+      "title": "Core Tactics Pack (Foundations)",
+      "file": "core_tactics.json",
+      "description": "Foundational tactics: mates, promotions, and hanging-piece tactics to build pattern recognition.",
+      "tags": [
+        "tactics",
+        "foundations"
+      ]
+    },
+    {
+      "id": "core_openings",
+      "title": "Core Openings Pack (Essential Lines)",
+      "file": "core_openings.json",
+      "description": "Essential opening lines you can drill as White or Black (toggle drill color in the UI).",
+      "tags": [
+        "openings",
+        "repertoire",
+        "essentials"
+      ]
+    },
+    {
+      "id": "core_endgames",
+      "title": "Core Endgames Pack (Essentials)",
+      "file": "core_endgames.json",
+      "description": "Essential endgame goals: mate patterns, promotion, rook endgame concepts, and stalemate awareness.",
+      "tags": [
+        "endgames",
+        "essentials"
+      ]
     }
   ]
 }

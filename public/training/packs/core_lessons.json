@@ -1,0 +1,350 @@
+{
+  "id": "core_lessons",
+  "title": "Core Lessons Pack (Curriculum)",
+  "version": 1,
+  "author": "PWA Chess",
+  "license": "CC BY-SA 4.0",
+  "tags": [
+    "lessons",
+    "curriculum"
+  ],
+  "items": [
+    {
+      "type": "lesson",
+      "itemId": "lesson-cct-001",
+      "difficulty": 1,
+      "themes": [
+        "basics",
+        "calculation"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "title": "CCT: checks, captures, threats",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Blunder check\nBefore every move, run **CCT**:\n- **Checks**\n- **Captures**\n- **Threats**\n\nThis habit prevents most one-move blunders."
+        },
+        {
+          "kind": "markdown",
+          "markdown": "In the next diagram, you can win immediately by delivering checkmate in one move."
+        },
+        {
+          "kind": "diagram",
+          "fen": "7k/5KQ1/8/8/8/8/8/8 w - - 0 1",
+          "caption": "Mate pattern: queen supported by king"
+        },
+        {
+          "kind": "tryMove",
+          "fen": "7k/5KQ1/8/8/8/8/8/8 w - - 0 1",
+          "prompt": "Play the checkmating move.",
+          "expectedUci": "g7g8",
+          "wrongBehavior": "hint",
+          "hintMarkdown": "Move the queen from **g7** to **g8**."
+        },
+        {
+          "kind": "markdown",
+          "markdown": "Nice. Supported mates (queen/rook protected by the king) are a great early pattern to memorize."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-opening-principles-001",
+      "difficulty": 1,
+      "themes": [
+        "opening",
+        "basics"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "title": "Opening principles (development & king safety)",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Opening principles\nGood openings are usually about **development** and **king safety**, not memorizing.\n\nKey ideas:\n- Fight for the center (e4/d4)\n- Develop knights/bishops\n- Castle early\n- Don't move the same piece repeatedly without a reason"
+        },
+        {
+          "kind": "diagram",
+          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "caption": "Starting position"
+        },
+        {
+          "kind": "tryMove",
+          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "prompt": "Play 1.e4.",
+          "expectedUci": "e2e4",
+          "wrongBehavior": "hint",
+          "hintMarkdown": "Click the pawn on **e2**, then **e4**."
+        },
+        {
+          "kind": "markdown",
+          "markdown": "Great. 1.e4 or 1.d4 are both good ways to fight for the center."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-castling-001",
+      "difficulty": 1,
+      "themes": [
+        "opening",
+        "king-safety"
+      ],
+      "position": {
+        "fen": "k3r3/8/8/8/8/8/8/4K2R w K - 0 1"
+      },
+      "title": "Castling basics",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Castling\nCastling does two things at once:\n- moves the king to safety\n- connects the rooks\n\nIn UCI, White king-side castling is **e1g1**."
+        },
+        {
+          "kind": "diagram",
+          "fen": "k3r3/8/8/8/8/8/8/4K2R w K - 0 1",
+          "caption": "Try castling"
+        },
+        {
+          "kind": "tryMove",
+          "fen": "k3r3/8/8/8/8/8/8/4K2R w K - 0 1",
+          "prompt": "Castle king-side.",
+          "expectedUci": "e1g1",
+          "wrongBehavior": "hint",
+          "hintMarkdown": "Move king from **e1** to **g1**."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-back-rank-001",
+      "difficulty": 1,
+      "themes": [
+        "tactics",
+        "mate",
+        "rook"
+      ],
+      "position": {
+        "fen": "6k1/5ppp/8/8/8/8/8/4R1K1 w - - 0 1"
+      },
+      "title": "Back rank mate",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Back rank mate\nIf the enemy king is trapped behind its pawns, a rook (or queen) can sometimes mate on the back rank."
+        },
+        {
+          "kind": "diagram",
+          "fen": "6k1/5ppp/8/8/8/8/8/4R1K1 w - - 0 1",
+          "caption": "Back rank pattern"
+        },
+        {
+          "kind": "tryMove",
+          "fen": "6k1/5ppp/8/8/8/8/8/4R1K1 w - - 0 1",
+          "prompt": "Deliver back rank mate.",
+          "expectedUci": "e1e8",
+          "wrongBehavior": "hint",
+          "hintMarkdown": "Rook from **e1** to **e8**."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-promotion-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion"
+      ],
+      "position": {
+        "fen": "k7/1PK5/8/8/8/8/8/8 w - - 0 1"
+      },
+      "title": "Pawn promotion",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Pawn promotion\nA pawn that reaches the 8th rank promotes to a piece (usually a queen)."
+        },
+        {
+          "kind": "diagram",
+          "fen": "k7/1PK5/8/8/8/8/8/8 w - - 0 1",
+          "caption": "Promote with checkmate"
+        },
+        {
+          "kind": "tryMove",
+          "fen": "k7/1PK5/8/8/8/8/8/8 w - - 0 1",
+          "prompt": "Promote the pawn to a queen.",
+          "expectedUci": "b7b8q",
+          "wrongBehavior": "hint",
+          "hintMarkdown": "Move pawn **b7 \u2192 b8** and promote to **queen**."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-stalemate-001",
+      "difficulty": 2,
+      "themes": [
+        "endgame",
+        "draw"
+      ],
+      "position": {
+        "fen": "7k/5K2/6Q1/8/8/8/8/8 b - - 0 1"
+      },
+      "title": "Stalemate basics",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Stalemate\nIf the side to move has **no legal moves** and is **not in check**, the game is a draw.\n\nThis often happens when the defender has only a king."
+        },
+        {
+          "kind": "diagram",
+          "fen": "7k/5K2/6Q1/8/8/8/8/8 b - - 0 1",
+          "caption": "Black to move: is this a draw?"
+        },
+        {
+          "kind": "markdown",
+          "markdown": "Try making any move for Black. If there are no legal moves, it is a stalemate draw."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-opposition-001",
+      "difficulty": 2,
+      "themes": [
+        "endgame",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/8/4k3/4P3/4K3/8/8/8 w - - 0 1"
+      },
+      "title": "Opposition (idea)",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Opposition\nIn king-and-pawn endgames, **opposition** helps the attacking king make progress.\n\nGoal: promote the pawn."
+        },
+        {
+          "kind": "diagram",
+          "fen": "8/8/4k3/4P3/4K3/8/8/8 w - - 0 1",
+          "caption": "King + pawn vs king (simple)"
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-tactics-motifs-001",
+      "difficulty": 1,
+      "themes": [
+        "tactics",
+        "basics"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "title": "Core tactical motifs to drill",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Core tactical motifs\nTo improve fast, drill patterns:\n- forks\n- pins\n- skewers\n- discovered attacks\n- back rank\n- removing the defender\n\nCombine pattern recognition with CCT."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-calculation-001",
+      "difficulty": 2,
+      "themes": [
+        "calculation"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "title": "Calculation: candidates and forcing lines",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Calculation\nWhen the position is tactical:\n1) list candidate moves\n2) calculate forcing lines (checks/captures)\n3) compare outcomes\n\nAim for accuracy over speed."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-center-001",
+      "difficulty": 1,
+      "themes": [
+        "opening",
+        "basics"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "title": "Center control",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Center control\nThe center squares (e4, d4, e5, d5) affect piece mobility.\n\nA common plan: occupy with pawns, support with pieces."
+        },
+        {
+          "kind": "diagram",
+          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "caption": "Starting position"
+        },
+        {
+          "kind": "tryMove",
+          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "prompt": "Play 1.d4.",
+          "expectedUci": "d2d4",
+          "wrongBehavior": "hint",
+          "hintMarkdown": "Move pawn from **d2** to **d4**."
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-rook-endgames-001",
+      "difficulty": 3,
+      "themes": [
+        "endgame",
+        "rook"
+      ],
+      "position": {
+        "fen": "8/r1K1k3/2P5/8/8/8/8/3R4 w - - 0 1"
+      },
+      "title": "Rook endgames: activity & principles",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Rook endgames: activity\nKey heuristics:\n- rooks belong **behind passed pawns**\n- activate the king\n- cut off the enemy king"
+        },
+        {
+          "kind": "diagram",
+          "fen": "8/r1K1k3/2P5/8/8/8/8/3R4 w - - 0 1",
+          "caption": "Lucena-like position (concept)"
+        }
+      ]
+    },
+    {
+      "type": "lesson",
+      "itemId": "lesson-queen-early-001",
+      "difficulty": 1,
+      "themes": [
+        "opening",
+        "principles"
+      ],
+      "position": {
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      },
+      "title": "Why you usually don't develop the queen early",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Don't bring the queen out too early\nEarly queen moves often:\n- waste tempi\n- invite attacks\n- neglect development\n\nExceptions exist, but as a rule: develop minor pieces first."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,295 @@
+{
+  "id": "core_endgames",
+  "title": "Core Endgames Pack (Essentials)",
+  "version": 1,
+  "author": "PWA Chess",
+  "license": "CC0-1.0",
+  "tags": [
+    "endgames",
+    "essentials"
+  ],
+  "items": [
+    {
+      "type": "endgame",
+      "itemId": "eg-kqk-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "mate",
+        "kqk"
+      ],
+      "position": {
+        "fen": "7k/5KQ1/8/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Mate (deliver checkmate)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-kqk-002",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "mate",
+        "kqk"
+      ],
+      "position": {
+        "fen": "k7/1QK5/8/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Mate (deliver checkmate)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-krk-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "mate",
+        "krk"
+      ],
+      "position": {
+        "fen": "7k/5K2/6R1/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Mate (deliver checkmate)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-krk-002",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "mate",
+        "krk"
+      ],
+      "position": {
+        "fen": "k7/2K5/1R6/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Mate (deliver checkmate)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-kbbk-001",
+      "difficulty": 2,
+      "themes": [
+        "endgame",
+        "mate",
+        "two-bishops"
+      ],
+      "position": {
+        "fen": "7k/4B1B1/5K2/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Win (deliver checkmate eventually)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-kbnk-001",
+      "difficulty": 4,
+      "themes": [
+        "endgame",
+        "mate",
+        "bishop+knight"
+      ],
+      "position": {
+        "fen": "7k/4N1B1/5K2/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Win (deliver checkmate eventually)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-promote-a-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/P7/2K5/8/8/8/8/7k w - - 0 1"
+      },
+      "goal": "Promote a pawn"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-promote-b-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/1P6/2K5/8/8/8/8/k7 w - - 0 1"
+      },
+      "goal": "Promote a pawn"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-promote-c-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/2P5/1K6/8/8/8/8/7k w - - 0 1"
+      },
+      "goal": "Promote a pawn"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-promote-d-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/3P4/2K5/8/8/8/8/k7 w - - 0 1"
+      },
+      "goal": "Promote a pawn"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-promote-e-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/4P3/3K4/8/8/8/8/k7 w - - 0 1"
+      },
+      "goal": "Promote a pawn"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-promote-f-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/5P2/4K3/8/8/8/8/7k w - - 0 1"
+      },
+      "goal": "Promote a pawn"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-promote-g-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/6P1/5K2/8/8/8/8/k7 w - - 0 1"
+      },
+      "goal": "Promote a pawn"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-promote-h-001",
+      "difficulty": 1,
+      "themes": [
+        "endgame",
+        "promotion",
+        "kpvk"
+      ],
+      "position": {
+        "fen": "8/5K1P/8/8/8/8/8/k7 w - - 0 1"
+      },
+      "goal": "Promote a pawn"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-lucena-like-001",
+      "difficulty": 3,
+      "themes": [
+        "endgame",
+        "rook",
+        "lucena",
+        "bridge"
+      ],
+      "position": {
+        "fen": "8/r1K1k3/2P5/8/8/8/8/3R4 w - - 0 1"
+      },
+      "goal": "Win (convert the position)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-philidor-like-001",
+      "difficulty": 3,
+      "themes": [
+        "endgame",
+        "rook",
+        "philidor",
+        "draw"
+      ],
+      "position": {
+        "fen": "8/4k3/r3P3/4K3/8/8/8/4R3 b - - 0 1"
+      },
+      "goal": "Draw (hold the draw)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-stalemate-001",
+      "difficulty": 2,
+      "themes": [
+        "endgame",
+        "draw",
+        "stalemate"
+      ],
+      "position": {
+        "fen": "7k/5K2/6Q1/8/8/8/8/8 b - - 0 1"
+      },
+      "goal": "Draw (stalemate)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-stalemate-002",
+      "difficulty": 2,
+      "themes": [
+        "endgame",
+        "draw",
+        "stalemate"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/1Q6/2K5/k7 b - - 0 1"
+      },
+      "goal": "Draw (stalemate)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-stalemate-003",
+      "difficulty": 2,
+      "themes": [
+        "endgame",
+        "draw",
+        "stalemate"
+      ],
+      "position": {
+        "fen": "k7/2K5/1Q6/8/8/8/8/8 b - - 0 1"
+      },
+      "goal": "Draw (stalemate)"
+    },
+    {
+      "type": "endgame",
+      "itemId": "eg-stalemate-004",
+      "difficulty": 2,
+      "themes": [
+        "endgame",
+        "draw",
+        "stalemate"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/6Q1/5K2/7k b - - 0 1"
+      },
+      "goal": "Draw (stalemate)"
+    }
+  ]
+}

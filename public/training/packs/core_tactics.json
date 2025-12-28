@@ -1,0 +1,571 @@
+{
+  "id": "core_tactics",
+  "title": "Core Tactics Pack (Foundations)",
+  "version": 1,
+  "author": "PWA Chess",
+  "license": "CC0-1.0",
+  "tags": [
+    "tactics",
+    "foundations"
+  ],
+  "items": [
+    {
+      "type": "tactic",
+      "itemId": "tactic-q-mate-1-001",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen"
+      ],
+      "position": {
+        "fen": "7k/5KQ1/8/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "g7g8"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-q-mate-1-002",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen"
+      ],
+      "position": {
+        "fen": "k7/1QK5/8/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "b7b8"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-q-mate-1-003",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/8/1QK5/k7 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "b2b1"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-q-mate-1-004",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/8/5KQ1/7k w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "g2g1"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-r-mate-1-001",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "rook"
+      ],
+      "position": {
+        "fen": "7k/5K2/6R1/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "g6g8"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-r-mate-1-002",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "rook"
+      ],
+      "position": {
+        "fen": "k7/2K5/1R6/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "b6b8"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-r-mate-1-003",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "rook"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/1R6/2K5/k7 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "b3b1"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-r-mate-1-004",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "rook"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/6R1/5K2/7k w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "g3g1"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-q-mate-adj-001",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen",
+        "supported-mate"
+      ],
+      "position": {
+        "fen": "7k/8/6KQ/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "h6h7"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-q-mate-adj-002",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen",
+        "supported-mate"
+      ],
+      "position": {
+        "fen": "k7/8/QK6/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "a6a7"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-q-mate-adj-003",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen",
+        "supported-mate"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/QK6/8/k7 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "a3a2"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-q-mate-adj-004",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "queen",
+        "supported-mate"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/6KQ/8/7k w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "h3h2"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-r-mate-adj-001",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "rook",
+        "supported-mate"
+      ],
+      "position": {
+        "fen": "7k/8/6KR/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "h6h7"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-r-mate-adj-002",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "rook",
+        "supported-mate"
+      ],
+      "position": {
+        "fen": "k7/8/RK6/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "a6a7"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-r-mate-adj-003",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "rook",
+        "supported-mate"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/RK6/8/k7 w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "a3a2"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-r-mate-adj-004",
+      "difficulty": 1,
+      "themes": [
+        "mate-in-1",
+        "rook",
+        "supported-mate"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/6KR/8/7k w - - 0 1"
+      },
+      "goal": "Checkmate in 1.",
+      "solutions": [
+        {
+          "uci": "h3h2"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-promo-mate-1-001",
+      "difficulty": 2,
+      "themes": [
+        "mate-in-1",
+        "promotion"
+      ],
+      "position": {
+        "fen": "k7/1PK5/8/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Promote with checkmate.",
+      "solutions": [
+        {
+          "uci": "b7b8q"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-promo-mate-1-002",
+      "difficulty": 2,
+      "themes": [
+        "mate-in-1",
+        "promotion"
+      ],
+      "position": {
+        "fen": "7k/5KP1/8/8/8/8/8/8 w - - 0 1"
+      },
+      "goal": "Promote with checkmate.",
+      "solutions": [
+        {
+          "uci": "g7g8q"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-promo-mate-1-003",
+      "difficulty": 2,
+      "themes": [
+        "mate-in-1",
+        "promotion"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/8/1PK5/k7 w - - 0 1"
+      },
+      "goal": "Promote with checkmate.",
+      "solutions": [
+        {
+          "uci": "b2b1q"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-promo-mate-1-004",
+      "difficulty": 2,
+      "themes": [
+        "mate-in-1",
+        "promotion"
+      ],
+      "position": {
+        "fen": "8/8/8/8/8/8/5KP1/7k w - - 0 1"
+      },
+      "goal": "Promote with checkmate.",
+      "solutions": [
+        {
+          "uci": "g2g1q"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-001",
+      "difficulty": 1,
+      "themes": [
+        "win-material",
+        "capture",
+        "rook"
+      ],
+      "position": {
+        "fen": "q3k3/8/8/8/8/8/8/R3K3 w - - 0 1"
+      },
+      "goal": "Win the queen (capture it).",
+      "solutions": [
+        {
+          "uci": "a1a8"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-002",
+      "difficulty": 1,
+      "themes": [
+        "win-material",
+        "capture",
+        "queen"
+      ],
+      "position": {
+        "fen": "4k3/3q4/8/8/8/8/8/3QK3 w - - 0 1"
+      },
+      "goal": "Win the queen (capture it).",
+      "solutions": [
+        {
+          "uci": "d1d7"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-003",
+      "difficulty": 1,
+      "themes": [
+        "win-material",
+        "capture",
+        "bishop"
+      ],
+      "position": {
+        "fen": "4k3/5q2/8/8/2B5/8/8/4K3 w - - 0 1"
+      },
+      "goal": "Win the queen (capture it).",
+      "solutions": [
+        {
+          "uci": "c4f7"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-004",
+      "difficulty": 1,
+      "themes": [
+        "win-material",
+        "capture",
+        "knight"
+      ],
+      "position": {
+        "fen": "4k3/8/8/6q1/8/5N2/8/4K3 w - - 0 1"
+      },
+      "goal": "Win the queen (capture it).",
+      "solutions": [
+        {
+          "uci": "f3g5"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-005",
+      "difficulty": 2,
+      "themes": [
+        "win-material",
+        "capture",
+        "pawn"
+      ],
+      "position": {
+        "fen": "4k3/8/3q4/4P3/8/8/8/4K3 w - - 0 1"
+      },
+      "goal": "Capture the queen with a pawn.",
+      "solutions": [
+        {
+          "uci": "e5d6"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-006",
+      "difficulty": 1,
+      "themes": [
+        "win-material",
+        "capture",
+        "rook"
+      ],
+      "position": {
+        "fen": "6k1/7q/8/8/8/8/8/6KR w - - 0 1"
+      },
+      "goal": "Win the queen (capture it).",
+      "solutions": [
+        {
+          "uci": "h1h7"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-007",
+      "difficulty": 1,
+      "themes": [
+        "win-material",
+        "capture",
+        "bishop"
+      ],
+      "position": {
+        "fen": "4k3/1q6/8/8/4B3/8/8/4K3 w - - 0 1"
+      },
+      "goal": "Win the queen (capture it).",
+      "solutions": [
+        {
+          "uci": "e4b7"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-008",
+      "difficulty": 1,
+      "themes": [
+        "win-material",
+        "capture",
+        "queen"
+      ],
+      "position": {
+        "fen": "6k1/8/8/7q/8/8/8/3Q2K1 w - - 0 1"
+      },
+      "goal": "Win the queen (capture it).",
+      "solutions": [
+        {
+          "uci": "d1h5"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-009",
+      "difficulty": 1,
+      "themes": [
+        "win-material",
+        "capture",
+        "knight"
+      ],
+      "position": {
+        "fen": "4k3/8/8/4q3/2N5/8/8/4K3 w - - 0 1"
+      },
+      "goal": "Win the queen (capture it).",
+      "solutions": [
+        {
+          "uci": "c4e5"
+        }
+      ]
+    },
+    {
+      "type": "tactic",
+      "itemId": "tactic-win-queen-010",
+      "difficulty": 2,
+      "themes": [
+        "win-material",
+        "capture",
+        "pawn"
+      ],
+      "position": {
+        "fen": "4k3/8/6q1/7P/8/8/8/4K3 w - - 0 1"
+      },
+      "goal": "Capture the queen with a pawn.",
+      "solutions": [
+        {
+          "uci": "h5g6"
+        }
+      ]
+    }
+  ]
+}
