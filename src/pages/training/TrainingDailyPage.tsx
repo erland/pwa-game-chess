@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { loadBuiltInPacks } from '../../domain/training/packLoader';
 import type { TrainingPack, TrainingItem } from '../../domain/training/schema';
-import { parseItemKey } from '../../domain/training/keys';
+import { splitItemKey } from '../../domain/training/keys';
 import { ensureDailyQueue, type TrainingDailyQueue, type TrainingItemStats, listItemStats } from '../../storage/training/trainingStore';
 import { overallAccuracy } from '../../domain/training/selectors';
 
@@ -17,13 +17,23 @@ function todayLocalIsoDate(d = new Date()): string {
 }
 
 function findItem(packs: TrainingPack[], key: string): { pack: TrainingPack; item: TrainingItem } | null {
-  const parsed = parseItemKey(key);
+  const parsed = splitItemKey(key);
   if (!parsed) return null;
   const pack = packs.find((p) => p.id === parsed.packId);
   if (!pack) return null;
   const item = pack.items.find((it) => it.itemId === parsed.itemId);
   if (!item) return null;
   return { pack, item };
+}
+
+function itemLink(found: { pack: TrainingPack; item: TrainingItem } | null, key: string): string | null {
+  if (!found) return null;
+  const type = found.item.type;
+  if (type === 'tactic') return `/training/tactics?focus=${encodeURIComponent(key)}`;
+  if (type === 'openingLine') return `/training/openings?focus=${encodeURIComponent(key)}`;
+  if (type === 'endgame') return `/training/endgames`;
+  if (type === 'lesson') return `/training/lessons`;
+  return null;
 }
 
 export function TrainingDailyPage() {
@@ -109,7 +119,7 @@ export function TrainingDailyPage() {
               return (
                 <li key={k} style={{ marginBottom: 10 }}>
                   <div>
-                    <strong>{label}</strong>
+                    {itemLink(found, k) ? <Link to={itemLink(found, k)!}><strong>{label}</strong></Link> : <strong>{label}</strong>}
                   </div>
                   {meta && <div className="muted" style={{ fontSize: 12 }}>{meta}</div>}
                 </li>

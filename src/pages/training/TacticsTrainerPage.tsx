@@ -12,7 +12,7 @@ import { PromotionChooser } from '../../ui/PromotionChooser';
 
 import { loadBuiltInPacks } from '../../domain/training/packLoader';
 import type { TrainingPack, TrainingItem, TacticItem } from '../../domain/training/schema';
-import { parseItemKey, type TrainingItemKey } from '../../domain/training/keys';
+import { splitItemKey, type TrainingItemKey } from '../../domain/training/keys';
 import { evaluateTacticMove } from '../../domain/training/tactics';
 
 import {
@@ -36,7 +36,7 @@ function todayLocalIsoDate(d = new Date()): string {
 }
 
 function findItem(packs: TrainingPack[], key: string): { pack: TrainingPack; item: TrainingItem } | null {
-  const parsed = parseItemKey(key);
+  const parsed = splitItemKey(key);
   if (!parsed) return null;
   const pack = packs.find((p) => p.id === parsed.packId);
   if (!pack) return null;

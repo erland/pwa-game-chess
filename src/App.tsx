@@ -12,6 +12,7 @@ import { AppShell } from './ui/AppShell';
 import { TrainingShell } from './pages/training/TrainingShell';
 import { TrainingPlaceholderPage } from './pages/training/TrainingPlaceholderPage';
 import { TrainingDailyPage } from './pages/training/TrainingDailyPage';
+import { TrainingOpeningsPage } from './pages/training/TrainingOpeningsPage';
 import { TrainingTacticsPage } from './pages/training/TrainingTacticsPage';
 import { TrainingSessionSummaryPage } from './pages/training/TrainingSessionSummaryPage';
 
@@ -34,7 +35,7 @@ export default function App() {
             />
             <Route
               path="openings"
-              element={<TrainingPlaceholderPage title="Openings" description="Openings trainer will be implemented in a later step." />}
+              element={<TrainingOpeningsPage />}
             />
             <Route
               path="endgames"
