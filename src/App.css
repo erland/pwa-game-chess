@@ -789,3 +789,23 @@ h1 {
   max-height: 240px;
   overflow: auto;
 }
+
+/* --- MarkdownLite (safe subset) --- */
+.inlineCode {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.95em;
+}
+
+.codeBlock {
+  padding: 10px;
+  border-radius: 10px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.markdownLite ul {
+  margin-top: 0;
+}

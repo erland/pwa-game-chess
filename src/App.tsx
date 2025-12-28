@@ -10,9 +10,10 @@ import { ReviewPage } from './pages/ReviewPage';
 import { TrainingHomePage } from './pages/TrainingHomePage';
 import { AppShell } from './ui/AppShell';
 import { TrainingShell } from './pages/training/TrainingShell';
-import { TrainingPlaceholderPage } from './pages/training/TrainingPlaceholderPage';
 import { TrainingDailyPage } from './pages/training/TrainingDailyPage';
 import { TrainingOpeningsPage } from './pages/training/TrainingOpeningsPage';
+import { TrainingLessonsPage } from './pages/training/TrainingLessonsPage';
+import { LessonPage } from './pages/training/LessonPage';
 import { TrainingEndgamesPage } from './pages/training/TrainingEndgamesPage';
 import { TrainingTacticsPage } from './pages/training/TrainingTacticsPage';
 import { TrainingSessionSummaryPage } from './pages/training/TrainingSessionSummaryPage';
@@ -42,10 +43,8 @@ export default function App() {
               path="endgames"
               element={<TrainingEndgamesPage />}
             />
-            <Route
-              path="lessons"
-              element={<TrainingPlaceholderPage title="Lessons" description="Lessons will be implemented in a later step." />}
-            />
+            <Route path="lessons" element={<TrainingLessonsPage />} />
+            <Route path="lessons/:packId/:itemId" element={<LessonPage />} />
             <Route
               path="daily"
               element={<TrainingDailyPage />}

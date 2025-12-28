@@ -65,10 +65,30 @@ export interface EndgameItem extends TrainingItemBase {
   goal?: string;
 }
 
+export type LessonBlock =
+  | { kind: 'markdown'; markdown: string }
+  | { kind: 'diagram'; fen: string; caption?: string; orientation?: 'w' | 'b' }
+  | {
+      kind: 'tryMove';
+      /** Starting position for this prompt. */
+      fen: string;
+      /** Prompt shown to the user. */
+      prompt: string;
+      /** Acceptable moves to continue. */
+      expectedUci: string | string[];
+      /** Optional hint text shown when the user asks for a hint (or plays a wrong move, depending on wrongBehavior). */
+      hintMarkdown?: string;
+      /** What to do if the move is wrong (default: 'hint'). */
+      wrongBehavior?: 'hint' | 'rewind' | 'reveal';
+    };
+
 export interface LessonItem extends TrainingItemBase {
   type: 'lesson';
   title?: string;
+  /** Simple lesson body (legacy). Prefer blocks for new content. */
   markdown?: string;
+  /** Structured blocks for interactive lessons. */
+  blocks?: LessonBlock[];
 }
 
 export type TrainingItem = TacticItem | OpeningLineItem | EndgameItem | LessonItem;
@@ -263,11 +283,82 @@ export function validateTrainingPack(raw: unknown): ValidationResult<TrainingPac
         goal: optionalString(item, 'goal')
       });
     } else {
+      const blocksVal = item['blocks'];
+      let blocks: LessonBlock[] | undefined = undefined;
+
+      if (blocksVal !== undefined) {
+        if (!Array.isArray(blocksVal)) {
+          return { ok: false, error: at(`${path}.blocks`, 'must be an array when provided') };
+        }
+        blocks = [];
+        for (let j = 0; j < blocksVal.length; j++) {
+          const b = blocksVal[j];
+          const bp = `${path}.blocks[${j}]`;
+          if (!isRecord(b)) return { ok: false, error: at(bp, 'must be an object') };
+          const kind = b['kind'];
+          if (kind !== 'markdown' && kind !== 'diagram' && kind !== 'tryMove') {
+            return { ok: false, error: at(`${bp}.kind`, 'must be one of: markdown, diagram, tryMove') };
+          }
+
+          if (kind === 'markdown') {
+            const md = requireString(b, 'markdown', bp);
+            if (!md.ok) return md;
+            blocks.push({ kind: 'markdown', markdown: md.value });
+          } else if (kind === 'diagram') {
+            const fen = requireString(b, 'fen', bp);
+            if (!fen.ok) return fen;
+            const orientation = optionalString(b, 'orientation');
+            if (orientation && orientation !== 'w' && orientation !== 'b') {
+              return { ok: false, error: at(`${bp}.orientation`, 'must be "w" or "b" when provided') };
+            }
+            blocks.push({
+              kind: 'diagram',
+              fen: fen.value,
+              caption: optionalString(b, 'caption'),
+              orientation: (orientation as 'w' | 'b' | undefined)
+            });
+          } else {
+            const fen = requireString(b, 'fen', bp);
+            if (!fen.ok) return fen;
+            const prompt = requireString(b, 'prompt', bp);
+            if (!prompt.ok) return prompt;
+
+            const expectedVal = b['expectedUci'];
+            const expectedOk =
+              typeof expectedVal === 'string'
+                ? expectedVal.trim().length > 0
+                  ? expectedVal.trim()
+                  : null
+                : Array.isArray(expectedVal) && expectedVal.every((x) => typeof x === 'string' && x.trim().length > 0)
+                  ? (expectedVal as string[])
+                  : null;
+            if (!expectedOk) {
+              return { ok: false, error: at(`${bp}.expectedUci`, 'must be a non-empty string or string[]') };
+            }
+
+            const wrongBehavior = optionalString(b, 'wrongBehavior');
+            if (wrongBehavior && wrongBehavior !== 'hint' && wrongBehavior !== 'rewind' && wrongBehavior !== 'reveal') {
+              return { ok: false, error: at(`${bp}.wrongBehavior`, 'must be one of: hint, rewind, reveal') };
+            }
+
+            blocks.push({
+              kind: 'tryMove',
+              fen: fen.value,
+              prompt: prompt.value,
+              expectedUci: expectedOk as any,
+              hintMarkdown: optionalString(b, 'hintMarkdown'),
+              wrongBehavior: wrongBehavior as any
+            });
+          }
+        }
+      }
+
       items.push({
         ...common,
         type: 'lesson',
         title: optionalString(item, 'title'),
-        markdown: optionalString(item, 'markdown')
+        markdown: optionalString(item, 'markdown'),
+        blocks
       });
     }
   }

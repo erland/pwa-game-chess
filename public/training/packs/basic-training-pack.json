@@ -38,8 +38,44 @@
       "position": {
         "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
       },
-      "title": "How to use training packs (coming soon)",
-      "markdown": "This is a placeholder lesson item. Later steps will render lesson content and track progress."
+      "title": "Center control: your first moves",
+      "blocks": [
+        {
+          "kind": "markdown",
+          "markdown": "# Center control\nIn this short lesson you will:\n- look at a position\n- play a move\n- get a hint if you get stuck\n\nWhen you play the correct move, a **Continue** button will appear."
+        },
+        {
+          "kind": "diagram",
+          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "caption": "Starting position"
+        },
+        {
+          "kind": "tryMove",
+          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "prompt": "Try the move: play 1.e4 (king pawn two squares).",
+          "expectedUci": [
+            "e2e4"
+          ],
+          "hintMarkdown": "Tip: click the pawn on **e2**, then click **e4**.",
+          "wrongBehavior": "hint"
+        },
+        {
+          "kind": "markdown",
+          "markdown": "Nice! After 1.e4, Black often replies symmetrically with **1...e5**."
+        },
+        {
+          "kind": "tryMove",
+          "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+          "prompt": "Now it's Black to move. Try the move: 1...e5.",
+          "expectedUci": "e7e5",
+          "hintMarkdown": "Tip: move the pawn from **e7** to **e5**.",
+          "wrongBehavior": "rewind"
+        },
+        {
+          "kind": "markdown",
+          "markdown": "That\u2019s it.\n\nYou can add your own lessons by placing pack JSON files under `public/training/packs/` and listing them in `public/training/packs/index.json`."
+        }
+      ]
     },
     {
       "type": "openingLine",

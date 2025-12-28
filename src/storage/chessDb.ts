@@ -7,7 +7,7 @@
  */
 
 export const CHESS_DB_NAME = 'pwa-game-chess';
-export const CHESS_DB_VERSION = 4;
+export const CHESS_DB_VERSION = 5;
 
 export const STORE_GAMES = 'games';
 export const STORE_TRAINING_ITEM_STATS = 'trainingItemStats';
@@ -15,6 +15,7 @@ export const STORE_TRAINING_DAILY_QUEUE = 'trainingDailyQueue';
 export const STORE_TRAINING_SESSIONS = 'trainingSessions';
 export const STORE_TRAINING_SESSION_MISTAKES = 'trainingSessionMistakes';
 export const STORE_TRAINING_OPENING_NODE_STATS = 'trainingOpeningNodeStats';
+export const STORE_TRAINING_LESSON_PROGRESS = 'trainingLessonProgress';
 
 export function hasIndexedDb(): boolean {
   return typeof globalThis !== 'undefined' && typeof (globalThis as any).indexedDB !== 'undefined';
@@ -139,6 +140,21 @@ export async function openChessDb(): Promise<IDBDatabase> {
         }
         if (store && !store.indexNames.contains('updatedAtMs')) {
           store.createIndex('updatedAtMs', 'updatedAtMs', { unique: false });
+        }
+      }
+
+      // ---- Lesson progress (continue where you left off) ----
+      if (!db.objectStoreNames.contains(STORE_TRAINING_LESSON_PROGRESS)) {
+        const store = db.createObjectStore(STORE_TRAINING_LESSON_PROGRESS, { keyPath: 'key' });
+        store.createIndex('updatedAtMs', 'updatedAtMs', { unique: false });
+        store.createIndex('completedAtMs', 'completedAtMs', { unique: false });
+      } else {
+        const store = req.transaction?.objectStore(STORE_TRAINING_LESSON_PROGRESS);
+        if (store && !store.indexNames.contains('updatedAtMs')) {
+          store.createIndex('updatedAtMs', 'updatedAtMs', { unique: false });
+        }
+        if (store && !store.indexNames.contains('completedAtMs')) {
+          store.createIndex('completedAtMs', 'completedAtMs', { unique: false });
         }
       }
     };
