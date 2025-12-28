@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import type { TrainingPack } from '../../domain/training/schema';
-import { loadBuiltInPacks } from '../../domain/training/packLoader';
+import { loadAllPacks } from '../../domain/training/packLoader';
 import type { TrainingMistakeRecord, TrainingSessionRecord } from '../../storage/training/trainingSessionStore';
 import { getTrainingSession, listTrainingMistakes } from '../../storage/training/trainingSessionStore';
 
@@ -36,7 +36,7 @@ export function TrainingSessionSummaryPage() {
         const [s, m, packRes] = await Promise.all([
           getTrainingSession(id),
           listTrainingMistakes(id),
-          loadBuiltInPacks().catch(() => ({ packs: [], errors: [] }))
+          loadAllPacks().catch(() => ({ packs: [], errors: [] }))
         ]);
         if (!mounted) return;
         setSession(s);

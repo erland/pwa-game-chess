@@ -16,7 +16,7 @@ import { createStrongSearchCoach } from '../../domain/coach/strongSearchCoach';
 import { getProgressiveHint } from '../../domain/coach/hints';
 
 import type { TacticItem, TrainingPack } from '../../domain/training/schema';
-import { loadBuiltInPacks } from '../../domain/training/packLoader';
+import { loadAllPacks } from '../../domain/training/packLoader';
 import { makeItemKey, type TrainingItemKey } from '../../domain/training/keys';
 import { getSolutionLines, normalizeUci } from '../../domain/training/tactics';
 import { listItemStats, recordAttempt, type TrainingItemStats } from '../../storage/training/trainingStore';
@@ -186,7 +186,7 @@ export function TrainingTacticsPage() {
     setSolve({ kind: 'loading' });
     void (async () => {
       try {
-        const res = await loadBuiltInPacks();
+        const res = await loadAllPacks();
         if (!mounted) return;
         setSolve({
           kind: 'ready',

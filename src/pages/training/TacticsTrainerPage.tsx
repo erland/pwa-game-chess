@@ -10,7 +10,7 @@ import { fromFEN } from '../../domain/notation/fen';
 import { ChessBoard } from '../../ui/ChessBoard';
 import { PromotionChooser } from '../../ui/PromotionChooser';
 
-import { loadBuiltInPacks } from '../../domain/training/packLoader';
+import { loadAllPacks } from '../../domain/training/packLoader';
 import type { TrainingPack, TrainingItem, TacticItem } from '../../domain/training/schema';
 import { splitItemKey, type TrainingItemKey } from '../../domain/training/keys';
 import { evaluateTacticMove } from '../../domain/training/tactics';
@@ -115,7 +115,7 @@ export function TacticsTrainerPage() {
       setStatus('loading');
       setError(null);
       try {
-        const res = await loadBuiltInPacks();
+        const res = await loadAllPacks();
         if (!alive) return;
 
         setPacks(res.packs);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import type { LessonItem, TrainingPack } from '../../domain/training/schema';
-import { loadBuiltInPacks } from '../../domain/training/packLoader';
+import { loadAllPacks } from '../../domain/training/packLoader';
 import { makeItemKey, type TrainingItemKey } from '../../domain/training/keys';
 import { listLessonProgress, type LessonProgressRecord } from '../../storage/training/lessonProgressStore';
 
@@ -31,7 +31,7 @@ export function TrainingLessonsPage() {
     setStatus('loading');
     setError(null);
 
-    Promise.all([loadBuiltInPacks(), listLessonProgress(200)])
+    Promise.all([loadAllPacks(), listLessonProgress(200)])
       .then(([packsRes, prog]) => {
         if (!alive) return;
         setPacks(packsRes.packs);

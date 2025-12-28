@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { loadBuiltInPacks } from '../../domain/training/packLoader';
+import { loadAllPacks } from '../../domain/training/packLoader';
 import type { TrainingPack, TrainingItem } from '../../domain/training/schema';
 import { splitItemKey } from '../../domain/training/keys';
 import { ensureDailyQueue, type TrainingDailyQueue, type TrainingItemStats, listItemStats } from '../../storage/training/trainingStore';
@@ -50,7 +50,7 @@ export function TrainingDailyPage() {
     setStatus('loading');
     setError(null);
 
-    Promise.all([loadBuiltInPacks(), listItemStats()])
+    Promise.all([loadAllPacks(), listItemStats()])
       .then(async ([packsRes, statsRes]) => {
         if (!alive) return;
         setPacks(packsRes.packs);

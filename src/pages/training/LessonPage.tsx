@@ -11,7 +11,7 @@ import { fromFEN } from '../../domain/notation/fen';
 import { moveToUci, parseUciMove } from '../../domain/notation/uci';
 
 import type { LessonBlock, LessonItem, TrainingPack } from '../../domain/training/schema';
-import { loadBuiltInPacks } from '../../domain/training/packLoader';
+import { loadAllPacks } from '../../domain/training/packLoader';
 import { makeItemKey, type TrainingItemKey } from '../../domain/training/keys';
 import { getLessonBlocks } from '../../domain/training/lessons';
 import { normalizeUci } from '../../domain/training/tactics';
@@ -72,7 +72,7 @@ export function LessonPage() {
     (async () => {
       if (!packId || !itemId) throw new Error('Missing lesson route params');
 
-      const res = await loadBuiltInPacks();
+      const res = await loadAllPacks();
       const pack = res.packs.find((p) => p.id === packId);
       if (!pack) throw new Error(`Pack not found: ${packId}`);
 

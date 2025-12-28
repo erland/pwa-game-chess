@@ -11,6 +11,7 @@ import { TrainingHomePage } from './pages/TrainingHomePage';
 import { AppShell } from './ui/AppShell';
 import { TrainingShell } from './pages/training/TrainingShell';
 import { TrainingDailyPage } from './pages/training/TrainingDailyPage';
+import { TrainingPacksPage } from './pages/training/TrainingPacksPage';
 import { TrainingOpeningsPage } from './pages/training/TrainingOpeningsPage';
 import { TrainingLessonsPage } from './pages/training/TrainingLessonsPage';
 import { LessonPage } from './pages/training/LessonPage';
@@ -45,6 +46,7 @@ export default function App() {
             />
             <Route path="lessons" element={<TrainingLessonsPage />} />
             <Route path="lessons/:packId/:itemId" element={<LessonPage />} />
+            <Route path="packs" element={<TrainingPacksPage />} />
             <Route
               path="daily"
               element={<TrainingDailyPage />}

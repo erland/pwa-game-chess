@@ -7,7 +7,7 @@
  */
 
 export const CHESS_DB_NAME = 'pwa-game-chess';
-export const CHESS_DB_VERSION = 5;
+export const CHESS_DB_VERSION = 6;
 
 export const STORE_GAMES = 'games';
 export const STORE_TRAINING_ITEM_STATS = 'trainingItemStats';
@@ -16,6 +16,7 @@ export const STORE_TRAINING_SESSIONS = 'trainingSessions';
 export const STORE_TRAINING_SESSION_MISTAKES = 'trainingSessionMistakes';
 export const STORE_TRAINING_OPENING_NODE_STATS = 'trainingOpeningNodeStats';
 export const STORE_TRAINING_LESSON_PROGRESS = 'trainingLessonProgress';
+export const STORE_TRAINING_CUSTOM_PACKS = 'trainingCustomPacks';
 
 export function hasIndexedDb(): boolean {
   return typeof globalThis !== 'undefined' && typeof (globalThis as any).indexedDB !== 'undefined';
@@ -157,6 +158,22 @@ export async function openChessDb(): Promise<IDBDatabase> {
           store.createIndex('completedAtMs', 'completedAtMs', { unique: false });
         }
       }
+
+      // ---- Custom training packs (imported by user) ----
+      if (!db.objectStoreNames.contains(STORE_TRAINING_CUSTOM_PACKS)) {
+        const store = db.createObjectStore(STORE_TRAINING_CUSTOM_PACKS, { keyPath: 'id' });
+        store.createIndex('updatedAtMs', 'updatedAtMs', { unique: false });
+        store.createIndex('addedAtMs', 'addedAtMs', { unique: false });
+      } else {
+        const store = req.transaction?.objectStore(STORE_TRAINING_CUSTOM_PACKS);
+        if (store && !store.indexNames.contains('updatedAtMs')) {
+          store.createIndex('updatedAtMs', 'updatedAtMs', { unique: false });
+        }
+        if (store && !store.indexNames.contains('addedAtMs')) {
+          store.createIndex('addedAtMs', 'addedAtMs', { unique: false });
+        }
+      }
+
     };
 
     req.onsuccess = () => resolve(req.result);

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { loadBuiltInPacks, type PackLoadError } from '../domain/training/packLoader';
+import { loadAllPacks, type PackLoadError } from '../domain/training/packLoader';
 import type { TrainingItemType, TrainingPack } from '../domain/training/schema';
 
 type Status = 'idle' | 'loading' | 'ready' | 'error';
@@ -19,7 +19,7 @@ export function TrainingHomePage() {
   useEffect(() => {
     let alive = true;
     setStatus('loading');
-    loadBuiltInPacks()
+    loadAllPacks()
       .then((res) => {
         if (!alive) return;
         setPacks(res.packs);
@@ -73,7 +73,7 @@ export function TrainingHomePage() {
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Built-in training packs</h3>
+        <h3 style={{ marginTop: 0 }}>Available training packs</h3>
 
         {status === 'loading' && <p className="muted">Loading packs…</p>}
 

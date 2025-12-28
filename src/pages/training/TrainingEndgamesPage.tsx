@@ -20,7 +20,7 @@ function findKingSquare(state: GameState, color: Color): Square | null {
 import type { TrainingItemKey } from '../../domain/training/keys';
 import { makeItemKey, splitItemKey } from '../../domain/training/keys';
 import type { EndgameItem, TrainingPack } from '../../domain/training/schema';
-import { loadBuiltInPacks } from '../../domain/training/packLoader';
+import { loadAllPacks } from '../../domain/training/packLoader';
 import { parseEndgameGoal, checkEndgameGoal } from '../../domain/training/endgameGoals';
 
 import { ChessBoard } from '../../ui/ChessBoard';
@@ -155,7 +155,7 @@ export function TrainingEndgamesPage() {
       setStatus('loading');
       setError(null);
       try {
-        const [p, s] = await Promise.all([loadBuiltInPacks(), listItemStats()]);
+        const [p, s] = await Promise.all([loadAllPacks(), listItemStats()]);
         if (!mounted) return;
         setPacks(p.packs);
         setStats(s);

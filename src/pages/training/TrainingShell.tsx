@@ -28,6 +28,9 @@ export function TrainingShell() {
           <NavLink to="/training/lessons" className={navClass}>
             Lessons
           </NavLink>
+          <NavLink to="/training/packs" className={navClass}>
+            Packs
+          </NavLink>
           <NavLink to="/training/daily" className={navClass}>
             Daily
           </NavLink>

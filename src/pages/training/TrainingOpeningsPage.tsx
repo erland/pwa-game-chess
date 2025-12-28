@@ -7,7 +7,7 @@ import { applyMove } from '../../domain/applyMove';
 import { tryParseFEN } from '../../domain/notation/fen';
 import { moveToUci } from '../../domain/notation/uci';
 
-import { loadBuiltInPacks } from '../../domain/training/packLoader';
+import { loadAllPacks } from '../../domain/training/packLoader';
 import type { OpeningLineItem, TrainingPack } from '../../domain/training/schema';
 import { parseItemKey, type TrainingItemKey } from '../../domain/training/keys';
 import { isUciLike, normalizeUci, uciToLegalMove, autoPlayOpponentReplies } from '../../domain/training/openingsDrill';
@@ -150,7 +150,7 @@ export function TrainingOpeningsPage() {
     setStatus('loading');
     setError(null);
 
-    Promise.all([loadBuiltInPacks(), listItemStats(), listOpeningNodeStats()])
+    Promise.all([loadAllPacks(), listItemStats(), listOpeningNodeStats()])
       .then(([packsRes, statsRes, nodeStatsRes]) => {
         if (!alive) return;
 

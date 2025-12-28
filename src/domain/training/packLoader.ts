@@ -5,6 +5,7 @@ import {
   type TrainingPackIndex,
   type TrainingPackIndexEntry
 } from './schema';
+import { listCustomPacks } from '../../storage/training/customPacksStore';
 
 export interface PackLoadError {
   packId?: string;
@@ -16,6 +17,11 @@ export interface LoadBuiltInPacksResult {
   index?: TrainingPackIndex;
   packs: TrainingPack[];
   errors: PackLoadError[];
+}
+
+export interface LoadAllPacksResult extends LoadBuiltInPacksResult {
+  /** Custom packs imported by the user. */
+  customPacks: TrainingPack[];
 }
 
 function getBaseUrl(): string {
@@ -93,4 +99,36 @@ export async function loadBuiltInPacks(
   packs.sort((a, b) => a.title.localeCompare(b.title));
 
   return { index, packs, errors };
+}
+
+
+/**
+ * Loads built-in packs plus any custom packs imported by the user.
+ *
+ * Custom packs override built-in packs with the same id.
+ */
+export async function loadAllPacks(
+  fetchFn: typeof fetch = fetch,
+  baseUrl: string = getBaseUrl()
+): Promise<LoadAllPacksResult> {
+  const builtIn = await loadBuiltInPacks(fetchFn, baseUrl);
+  const errors: PackLoadError[] = [...builtIn.errors];
+  const custom = await listCustomPacks(500);
+
+  const customPacks = custom.map((r) => r.pack);
+
+  const byId = new Map<string, TrainingPack>();
+  for (const p of builtIn.packs) byId.set(p.id, p);
+
+  for (const p of customPacks) {
+    if (byId.has(p.id)) {
+      errors.push({ packId: p.id, message: 'Custom pack overrides a built-in pack with the same id.' });
+    }
+    byId.set(p.id, p);
+  }
+
+  const packs = Array.from(byId.values());
+  packs.sort((a, b) => a.title.localeCompare(b.title));
+
+  return { index: builtIn.index, packs, customPacks, errors };
 }
