@@ -10,6 +10,7 @@ import { isInCheck } from '../../domain/attack';
 import { tryParseFEN } from '../../domain/notation/fen';
 import { moveToUci } from '../../domain/notation/uci';
 import { getGameStatus } from '../../domain/gameStatus';
+import { cloneGameState } from '../../domain/cloneGameState';
 
 function findKingSquare(state: GameState, color: Color): Square | null {
   for (let i = 0; i < 64; i++) {
@@ -24,12 +25,14 @@ import { makeItemKey, splitItemKey } from '../../domain/training/keys';
 import type { EndgameItem, TrainingPack } from '../../domain/training/schema';
 import { loadAllPacks } from '../../domain/training/packLoader';
 import { parseEndgameGoal, checkEndgameGoal } from '../../domain/training/endgameGoals';
+import type { EndgameCheckpoint, EndgameMoveFeedback } from '../../domain/training/endgameDrift';
+import { computeEndgameMoveFeedback, suggestAutoCheckpoint } from '../../domain/training/endgameDrift';
 
 import { ChessBoard } from '../../ui/ChessBoard';
 import { PromotionChooser } from '../../ui/PromotionChooser';
 
 import { createStrongSearchCoach, getProgressiveHint } from '../../domain/coach';
-import type { Coach, CoachAnalysis, CoachHint } from '../../domain/coach';
+import type { Coach, CoachAnalysis, CoachHint, CoachMoveGrade } from '../../domain/coach';
 
 import type { TrainingItemStats } from '../../storage/training/trainingStore';
 import { listItemStats, recordAttempt } from '../../storage/training/trainingStore';
@@ -71,6 +74,16 @@ type EndgameSession = {
 
   analysis: CoachAnalysis | null;
   hint: CoachHint | null;
+
+  // Per-move grading and drift warnings (Step 9)
+  lastGrade: CoachMoveGrade | null;
+  feedback: EndgameMoveFeedback | null;
+  totalCpLoss: number;
+  gradedMoves: number;
+  gradeCounts: Record<string, number>;
+
+  // "Try again from key position" checkpoint (Step 9)
+  checkpoint: EndgameCheckpoint | null;
 
   result: EndgameResult | null;
 };
@@ -234,6 +247,49 @@ export function TrainingEndgamesPage() {
     setSession({ ...session, analysis: null, hint: null });
   }
 
+  function setCheckpointNow(label = 'Checkpoint') {
+    if (!session) return;
+    if (session.result) return;
+    const ts = nowMs();
+    const cp: EndgameCheckpoint = {
+      label,
+      state: cloneGameState(session.state),
+      ply: session.playedLineUci.length,
+      setAtMs: ts,
+      scoreCp: session.lastGrade?.playedScoreCp
+    };
+    setSession({ ...session, checkpoint: cp });
+  }
+
+  function retryFromCheckpoint() {
+    if (!session) return;
+    const cp = session.checkpoint;
+    if (!cp) return;
+
+    setSelectedSquare(null);
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    const ts = nowMs();
+    setSession({
+      ...session,
+      state: cloneGameState(cp.state),
+      startedAtMs: ts,
+      playedLineUci: session.playedLineUci.slice(0, Math.min(session.playedLineUci.length, cp.ply)),
+      lastMove: null,
+      lastMoveColor: null,
+      pendingPromotion: null,
+      analysis: null,
+      hint: null,
+      lastGrade: null,
+      feedback: null,
+      totalCpLoss: 0,
+      gradedMoves: 0,
+      gradeCounts: {},
+      result: null
+    });
+  }
+
   async function startEndgame(ref?: EndgameRef | null) {
     const ts = nowMs();
     const chosen = ref ?? pickNextEndgame(endgameRefs, stats, ts, focusKey);
@@ -256,8 +312,8 @@ export function TrainingEndgamesPage() {
 
     const s: EndgameSession = {
       ref: chosen,
-      baseState: base,
-      state: base,
+      baseState: cloneGameState(base),
+      state: cloneGameState(base),
       playerColor,
       startedAtMs: ts,
       playedLineUci: [],
@@ -266,6 +322,12 @@ export function TrainingEndgamesPage() {
       pendingPromotion: null,
       analysis: null,
       hint: null,
+      lastGrade: null,
+      feedback: null,
+      totalCpLoss: 0,
+      gradedMoves: 0,
+      gradeCounts: {},
+      checkpoint: null,
       result: null
     };
 
@@ -334,7 +396,29 @@ export function TrainingEndgamesPage() {
     if (!session) return;
     clearCoaching();
 
+    const goal = parseEndgameGoal(session.ref.goalText);
     const moverColor = session.state.sideToMove;
+
+    // --- Step 9: evaluate player's move quality + drift ---
+    let lastGrade: CoachMoveGrade | null = null;
+    let feedback: EndgameMoveFeedback | null = null;
+    let totalCpLoss = session.totalCpLoss;
+    let gradedMoves = session.gradedMoves;
+    const gradeCounts: Record<string, number> = { ...session.gradeCounts };
+
+    if (moverColor === session.playerColor && coachRef.current) {
+      try {
+        const ctrl = new AbortController();
+        lastGrade = await coachRef.current.gradeMove(session.state, move, { maxDepth: 3, thinkTimeMs: 0 }, ctrl.signal);
+        feedback = computeEndgameMoveFeedback(goal, lastGrade);
+        totalCpLoss += Math.max(0, Math.round(lastGrade.cpLoss ?? 0));
+        gradedMoves += 1;
+        gradeCounts[lastGrade.label] = (gradeCounts[lastGrade.label] ?? 0) + 1;
+      } catch {
+        // best-effort: training should remain usable even if grading fails
+      }
+    }
+
     let next = applyMove(session.state, move);
 
     const played = session.playedLineUci.concat([moveToUci(move)]);
@@ -362,8 +446,24 @@ export function TrainingEndgamesPage() {
       lastMoveColor = candColor;
     }
 
-    const goal = parseEndgameGoal(session.ref.goalText);
     const check = checkEndgameGoal(next, session.playerColor, goal, lastMove, lastMoveColor);
+
+    // --- Step 9: automatic "key position" checkpoint ---
+    let checkpoint = session.checkpoint;
+    if (lastGrade && getGameStatus(next).kind === 'inProgress' && next.sideToMove === session.playerColor) {
+      const prevAutoScore = checkpoint && checkpoint.label.startsWith('Key position') ? checkpoint.scoreCp : undefined;
+      const suggestion = suggestAutoCheckpoint(goal, lastGrade.playedScoreCp, lastGrade.label, prevAutoScore);
+      const canAutoUpdate = !checkpoint || checkpoint.label.startsWith('Key position');
+      if (suggestion && canAutoUpdate) {
+        checkpoint = {
+          label: suggestion.label,
+          state: cloneGameState(next),
+          ply: played.length,
+          setAtMs: nowMs(),
+          scoreCp: suggestion.scoreCp
+        };
+      }
+    }
 
     const updated: EndgameSession = {
       ...session,
@@ -371,7 +471,13 @@ export function TrainingEndgamesPage() {
       playedLineUci: played,
       lastMove,
       lastMoveColor,
-      pendingPromotion: null
+      pendingPromotion: null,
+      lastGrade,
+      feedback,
+      totalCpLoss,
+      gradedMoves,
+      gradeCounts,
+      checkpoint
     };
 
     if (check.done) {
@@ -389,6 +495,7 @@ export function TrainingEndgamesPage() {
 
       // Save as a small "session" for reuse of the summary page.
       const sessionId = makeSessionId();
+      const avgCpLoss = gradedMoves > 0 ? Math.round(totalCpLoss / gradedMoves) : 0;
       const rec: TrainingSessionRecord = {
         id: sessionId,
         mode: 'endgames',
@@ -398,9 +505,9 @@ export function TrainingEndgamesPage() {
         correct: check.success ? 1 : 0,
         totalSolveMs: solveMs,
         avgSolveMs: solveMs,
-        totalCpLoss: 0,
-        avgCpLoss: 0,
-        gradeCounts: {},
+        totalCpLoss,
+        avgCpLoss,
+        gradeCounts,
         packIds: [session.ref.packId]
       };
       await saveTrainingSession(rec);
@@ -476,6 +583,7 @@ export function TrainingEndgamesPage() {
     });
 
     const sessionId = makeSessionId();
+    const avgCpLoss = session.gradedMoves > 0 ? Math.round(session.totalCpLoss / session.gradedMoves) : 0;
     const rec: TrainingSessionRecord = {
       id: sessionId,
       mode: 'endgames',
@@ -485,9 +593,9 @@ export function TrainingEndgamesPage() {
       correct: 0,
       totalSolveMs: solveMs,
       avgSolveMs: solveMs,
-      totalCpLoss: 0,
-      avgCpLoss: 0,
-      gradeCounts: {},
+      totalCpLoss: session.totalCpLoss,
+      avgCpLoss,
+      gradeCounts: session.gradeCounts,
       packIds: [session.ref.packId]
     };
     await saveTrainingSession(rec);
@@ -604,6 +712,8 @@ export function TrainingEndgamesPage() {
       },
       { key: 'n', onKey: () => void startEndgame(null) },
       { key: 'r', onKey: () => void startEndgame(session ? session.ref : null) },
+      { key: 'c', onKey: () => setCheckpointNow() },
+      { key: 'p', onKey: () => retryFromCheckpoint() },
       { key: 'g', onKey: () => void giveUp() },
       { key: 's', onKey: () => void giveUp() }
     ],
@@ -668,6 +778,44 @@ return (
           disabled={!!session.result}
         />
 
+        {!session.result && (session.feedback || session.lastGrade) && (
+          <div className="card" style={{ marginTop: 12 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <strong>Move feedback</strong>
+              {session.feedback && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setSession({ ...session, feedback: null })}
+                >
+                  Dismiss
+                </button>
+              )}
+            </div>
+            {session.feedback ? (
+              <p className="muted" style={{ marginTop: 8 }}>
+                <strong style={{ textTransform: 'capitalize' }}>{session.feedback.severity}</strong> — {session.feedback.message}{' '}
+                {session.feedback.bestMoveUci ? (
+                  <span className="muted">Best: <code>{session.feedback.bestMoveUci}</code></span>
+                ) : null}
+              </p>
+            ) : session.lastGrade ? (
+              <p className="muted" style={{ marginTop: 8 }}>
+                Last move: <strong>{session.lastGrade.label}</strong> · cp loss <strong>{Math.round(session.lastGrade.cpLoss ?? 0)}</strong>
+                {session.lastGrade.bestMoveUci ? (
+                  <span className="muted"> · Best: <code>{session.lastGrade.bestMoveUci}</code></span>
+                ) : null}
+              </p>
+            ) : null}
+
+            {session.checkpoint && (
+              <p className="muted" style={{ marginTop: 8 }}>
+                Checkpoint: <strong>{session.checkpoint.label}</strong> <span className="muted">(press P to retry)</span>
+              </p>
+            )}
+          </div>
+        )}
+
         {session.pendingPromotion && (
           <PromotionChooser
             color={session.pendingPromotion.color}
@@ -691,6 +839,15 @@ return (
             <button type="button" className="btn btn-secondary" onClick={giveUp}>
               Give up
             </button>
+
+            <button type="button" className="btn btn-secondary" onClick={() => setCheckpointNow()}>
+              Set checkpoint
+            </button>
+            {session.checkpoint && (
+              <button type="button" className="btn btn-secondary" onClick={retryFromCheckpoint}>
+                Retry checkpoint
+              </button>
+            )}
           </div>
         )}
 
