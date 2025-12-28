@@ -11,7 +11,7 @@ import { generatePseudoLegalMoves } from '../../domain/movegen';
 import { getPiece } from '../../domain/board';
 import type { Orientation } from '../../domain/localSetup';
 import { fromFEN } from '../../domain/notation/fen';
-import { moveToUci, parseUciMove } from '../../domain/notation/uci';
+import { moveToUci } from '../../domain/notation/uci';
 
 import type { CoachAnalysis, CoachHint, CoachMoveGrade, ProgressiveHintLevel } from '../../domain/coach/types';
 import { createStrongSearchCoach } from '../../domain/coach/strongSearchCoach';
@@ -20,7 +20,7 @@ import { getProgressiveHint } from '../../domain/coach/hints';
 import type { TacticItem, TrainingPack } from '../../domain/training/schema';
 import { loadAllPacks } from '../../domain/training/packLoader';
 import { makeItemKey, type TrainingItemKey } from '../../domain/training/keys';
-import { getSolutionLines, normalizeUci } from '../../domain/training/tactics';
+import { getSolutionLines, normalizeUci, progressTacticLine } from '../../domain/training/tactics';
 import { listItemStats, recordAttempt, type TrainingItemStats } from '../../storage/training/trainingStore';
 import type { TrainingMistakeRecord, TrainingSessionRecord } from '../../storage/training/trainingSessionStore';
 import {
@@ -100,23 +100,7 @@ function isTactic(it: any): it is TacticItem {
   return it && typeof it === 'object' && it.type === 'tactic' && Array.isArray(it.solutions);
 }
 
-function uciToLegalMove(state: GameState, uci: string): Move | null {
-  const parsed = parseUciMove(uci);
-  if (!parsed) return null;
-
-  const candidates = generateLegalMoves(state, parsed.from).filter((m) => m.to === parsed.to);
-  if (candidates.length === 0) return null;
-
-  if (parsed.promotion) {
-    const p = parsed.promotion;
-    const promo = candidates.find((m) => String(m.promotion).toLowerCase() === p);
-    return promo ?? null;
-  }
-
-  // Prefer non-promotion move if UCI doesn't include a promotion suffix.
-  const nonPromo = candidates.find((m) => !m.promotion);
-  return nonPromo ?? candidates[0] ?? null;
-}
+// (Multi-ply tactics progression is implemented in domain/training/tactics.ts)
 
 function pickNextTactic(refs: TacticRef[], stats: TrainingItemStats[], ts: number): TacticRef | null {
   if (refs.length === 0) return null;
@@ -432,23 +416,29 @@ export function TrainingTacticsPage() {
     resetCoaching();
     clearNotice();
 
-    const playedUci = normalizeUci(moveToUci(move));
-
-    const line = session.activeLine
-      ?? session.solutionLines.find((l) => l[session.ply] === playedUci)
-      ?? null;
-
     const beforeState = session.state;
-    const applied = applyMove(beforeState, move);
     const solveMs = Math.max(0, Math.round(nowMs() - session.startedAtMs));
 
-    // Wrong move ends the attempt.
-    if (!line) {
+    const prog = progressTacticLine(beforeState, move, session.ref.item, {
+      userColor: session.userColor,
+      activeLine: session.activeLine,
+      playedLineUci: session.playedLineUci
+    });
+
+    if (prog.kind === 'wrong' || prog.kind === 'packIllegal') {
       setSession({
         ...session,
-        state: applied,
-        result: { correct: false, playedLineUci: [...session.playedLineUci, playedUci], solveMs },
-        lastMove: { from: move.from, to: move.to },
+        state: prog.state,
+        activeLine: prog.kind === 'packIllegal' ? prog.activeLine : session.activeLine,
+        ply: prog.ply,
+        playedLineUci: prog.playedLineUci,
+        result: {
+          correct: false,
+          playedLineUci: prog.playedLineUci,
+          solveMs,
+          message: prog.kind === 'packIllegal' ? prog.message : undefined
+        },
+        lastMove: prog.lastMove,
         hint: null,
         hintLevel: 0,
         coachBusy: true
@@ -480,54 +470,16 @@ export function TrainingTacticsPage() {
       return;
     }
 
-    // Correct move: advance ply and auto-play opponent replies.
-    let nextState = applied;
-    let nextPly = session.ply + 1;
-    let nextPlayed = [...session.playedLineUci, playedUci];
-    let lastMove: { from: Square; to: Square } | null = { from: move.from, to: move.to };
-    let activeLine = session.activeLine ?? line;
-
-    // Auto-play any expected opponent moves until it's user's turn again or line ends.
-    while (nextPly < activeLine.length && nextState.sideToMove !== session.userColor) {
-      const expectedUci = activeLine[nextPly];
-      const om = uciToLegalMove(nextState, expectedUci);
-      if (!om) {
-        setSession({
-          ...session,
-          state: nextState,
-          activeLine,
-          ply: nextPly,
-          playedLineUci: nextPlayed,
-          result: {
-            correct: false,
-            playedLineUci: nextPlayed,
-            solveMs,
-            message: `Pack line contains an illegal move at ply ${nextPly + 1}: ${expectedUci}`
-          },
-          lastMove,
-          hint: null,
-          hintLevel: 0
-        });
-        return;
-      }
-      nextState = applyMove(nextState, om);
-      nextPlayed = [...nextPlayed, normalizeUci(expectedUci)];
-      lastMove = { from: om.from, to: om.to };
-      nextPly++;
-    }
-
-    const complete = nextPly >= activeLine.length;
+    const complete = prog.kind === 'complete';
 
     setSession({
       ...session,
-      state: nextState,
-      userColor: session.userColor,
-      solutionLines: session.solutionLines,
-      activeLine,
-      ply: nextPly,
-      playedLineUci: nextPlayed,
-      result: complete ? { correct: true, playedLineUci: nextPlayed, solveMs } : null,
-      lastMove,
+      state: prog.state,
+      activeLine: prog.activeLine,
+      ply: prog.ply,
+      playedLineUci: prog.playedLineUci,
+      result: complete ? { correct: true, playedLineUci: prog.playedLineUci, solveMs } : null,
+      lastMove: prog.lastMove,
       hint: null,
       hintLevel: 0,
       coachBusy: true
@@ -560,8 +512,7 @@ export function TrainingTacticsPage() {
       }
 
       // Record attempt only when the line is complete.
-      const end = complete;
-      if (!end) return;
+      if (!complete) return;
       try {
         await recordAttempt({
           packId: session.ref.pack.id,
