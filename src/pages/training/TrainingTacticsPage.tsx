@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
+import { useGlobalHotkeys } from '../../ui/useGlobalHotkeys';
+import { useTrainingSettings } from './TrainingSettingsContext';
 import type { Color, GameState, Move, Square } from '../../domain/chessTypes';
 import { applyMove } from '../../domain/applyMove';
 import { findKing, isInCheck } from '../../domain/attack';
@@ -158,6 +160,11 @@ function pickNextTactic(refs: TacticRef[], stats: TrainingItemStats[], ts: numbe
 }
 
 export function TrainingTacticsPage() {
+
+  const { settings } = useTrainingSettings();
+  const showHintSquares = settings.hintStyle === 'squares' || settings.hintStyle === 'both';
+  const showHintArrow = settings.hintStyle === 'arrow' || settings.hintStyle === 'both';
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const reviewSessionId = searchParams.get('reviewSession');
@@ -803,7 +810,25 @@ export function TrainingTacticsPage() {
     ? (!reviewQueue || reviewIndex >= reviewQueue.length)
     : (tacticRefs.length === 0);
 
-  return (
+  
+  useGlobalHotkeys(
+    [
+      {
+        key: 'h',
+        onKey: () => {
+          if (!session) return;
+          const nextLevel = session.hintLevel === 0 ? 1 : (Math.min(3, session.hintLevel + 1) as any);
+          showHint(nextLevel);
+        }
+      },
+      { key: 'n', onKey: () => startNext() },
+      { key: 'r', onKey: () => tryAgain() },
+      { key: 's', onKey: () => giveUpShowLine() }
+    ],
+    [session, startNext, tryAgain, giveUpShowLine]
+  );
+
+return (
     <section className="stack">
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Tactics (multi-move lines)</h3>
@@ -921,6 +946,8 @@ export function TrainingTacticsPage() {
             selectedSquare={selectedSquare}
             legalMovesFromSelection={legalMovesFromSelection}
             hintMove={hintMove}
+            showHintSquares={showHintSquares}
+            showHintArrow={showHintArrow}
             lastMove={session.lastMove}
             checkSquares={checkSquares}
             onSquareClick={handleSquareClick}

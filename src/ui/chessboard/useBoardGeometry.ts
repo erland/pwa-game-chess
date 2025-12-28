@@ -24,6 +24,13 @@ function squaresForOrientation(orientation: Orientation): Square[] {
 export function useBoardGeometry(orientation: Orientation) {
   const displaySquares = useMemo(() => squaresForOrientation(orientation), [orientation]);
 
+  // Fast lookup for overlays (e.g. hint arrows) without O(n) indexOf scans.
+  const displayIndexBySquare = useMemo(() => {
+    const m = new Map<Square, number>();
+    displaySquares.forEach((sq, i) => m.set(sq, i));
+    return m;
+  }, [displaySquares]);
+
   // Coordinate labels from viewer's perspective.
   const files = useMemo(() => (orientation === 'w' ? FILES : [...FILES].reverse()), [orientation]);
   const ranks = useMemo(() => (orientation === 'w' ? [...RANKS].reverse() : RANKS), [orientation]);
@@ -45,5 +52,5 @@ export function useBoardGeometry(orientation: Orientation) {
     [orientation]
   );
 
-  return { displaySquares, files, ranks, squareFromClientPoint };
+  return { displaySquares, displayIndexBySquare, files, ranks, squareFromClientPoint };
 }

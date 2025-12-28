@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { useGlobalHotkeys } from '../../ui/useGlobalHotkeys';
+import { useTrainingSettings } from './TrainingSettingsContext';
 import type { Move, Square } from '../../domain/chessTypes';
 import { applyMove } from '../../domain/applyMove';
 import { generateLegalMoves } from '../../domain/legalMoves';
@@ -56,6 +58,11 @@ function pickHintMove(expected: string | string[]): { from: Square; to: Square }
 }
 
 export function LessonPage() {
+
+  const { settings } = useTrainingSettings();
+  const showHintSquares = settings.hintStyle === 'squares' || settings.hintStyle === 'both';
+  const showHintArrow = settings.hintStyle === 'arrow' || settings.hintStyle === 'both';
+
   const { packId, itemId } = useParams();
   const navigate = useNavigate();
   const { noticeText, showNotice } = useToastNotice();
@@ -166,7 +173,21 @@ export function LessonPage() {
     setBlockIndex(0);
   }
 
-  function tryApplyMove(move: Move) {
+  
+  function showHintAction() {
+    if (!current || current.kind !== 'tryMove') return;
+    setTryMove((prev) =>
+      prev
+        ? {
+            ...prev,
+            hintMove: pickHintMove(current.expectedUci),
+            feedback: current.hintMarkdown ?? 'Hint shown'
+          }
+        : prev
+    );
+  }
+
+function tryApplyMove(move: Move) {
     if (!tryMove || !current || current.kind !== 'tryMove') return;
 
     const played = normalizeUci(moveToUci(move));
@@ -298,7 +319,17 @@ export function LessonPage() {
   const { pack, item, blocks } = load;
   const total = blocks.length;
 
-  return (
+  
+  useGlobalHotkeys(
+    [
+      { key: 'n', onKey: () => advance() },
+      { key: 'r', onKey: () => restart() },
+      { key: 'h', onKey: () => showHintAction() }
+    ],
+    [current]
+  );
+
+return (
     <section className="stack">
       {noticeText && (
         <div className="toast" role="status" aria-live="polite">
@@ -376,6 +407,8 @@ export function LessonPage() {
             selectedSquare={tryMove.selectedSquare}
             legalMovesFromSelection={legalMoves}
             hintMove={tryMove.hintMove}
+            showHintSquares={showHintSquares}
+            showHintArrow={showHintArrow}
             lastMove={tryMove.lastMove}
             onSquareClick={handleSquareClick}
             onMoveAttempt={handleMoveAttempt}
@@ -395,7 +428,7 @@ export function LessonPage() {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => setTryMove((prev) => (prev ? { ...prev, hintMove: pickHintMove(current.expectedUci), feedback: current.hintMarkdown ?? 'Hint shown' } : prev))}
+              onClick={showHintAction}
               disabled={tryMove.solved}
             >
               Hint

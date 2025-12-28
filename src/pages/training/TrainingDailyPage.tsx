@@ -16,16 +16,6 @@ function todayLocalIsoDate(d = new Date()): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function findItem(packs: TrainingPack[], key: string): { pack: TrainingPack; item: TrainingItem } | null {
-  const parsed = splitItemKey(key);
-  if (!parsed) return null;
-  const pack = packs.find((p) => p.id === parsed.packId);
-  if (!pack) return null;
-  const item = pack.items.find((it) => it.itemId === parsed.itemId);
-  if (!item) return null;
-  return { pack, item };
-}
-
 function itemLink(found: { pack: TrainingPack; item: TrainingItem } | null, key: string): string | null {
   if (!found) return null;
   const type = found.item.type;
@@ -44,6 +34,13 @@ export function TrainingDailyPage() {
   const [error, setError] = useState<string | null>(null);
 
   const date = useMemo(() => todayLocalIsoDate(), []);
+
+  // Build quick lookup maps for rendering.
+  const packsById = useMemo(() => {
+    const m = new Map<string, TrainingPack>();
+    for (const p of packs) m.set(p.id, p);
+    return m;
+  }, [packs]);
 
   useEffect(() => {
     let alive = true;
@@ -77,6 +74,20 @@ export function TrainingDailyPage() {
     const keys = (queue?.itemKeys ?? []) as unknown[];
     return keys.filter((k): k is string => typeof k === 'string' && k.length > 0);
   }, [queue]);
+
+  const foundByKey = useMemo(() => {
+    const m = new Map<string, { pack: TrainingPack; item: TrainingItem }>();
+    for (const k of validItemKeys) {
+      const parsed = splitItemKey(k);
+      if (!parsed) continue;
+      const pack = packsById.get(parsed.packId);
+      if (!pack) continue;
+      const item = pack.items.find((it) => it.itemId === parsed.itemId);
+      if (!item) continue;
+      m.set(k, { pack, item });
+    }
+    return m;
+  }, [validItemKeys, packsById]);
 
   return (
     <section className="stack">
@@ -118,7 +129,7 @@ export function TrainingDailyPage() {
         {status === 'ready' && queue && validItemKeys.length > 0 && (
           <ol>
             {validItemKeys.map((k) => {
-              const found = findItem(packs, k);
+              const found = foundByKey.get(k) ?? null;
               const label = found ? `${found.pack.title} • ${found.item.type}` : k;
               const meta = found ? `themes: ${found.item.themes.join(', ') || '—'} • difficulty: ${found.item.difficulty}` : '';
               return (

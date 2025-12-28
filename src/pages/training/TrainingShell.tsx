@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { TrainingSettingsProvider } from './TrainingSettingsContext';
 
 function navClass({ isActive }: { isActive: boolean }) {
   return `navLink${isActive ? ' isActive' : ''}`;
@@ -31,13 +32,18 @@ export function TrainingShell() {
           <NavLink to="/training/packs" className={navClass}>
             Packs
           </NavLink>
+          <NavLink to="/training/settings" className={navClass}>
+            Settings
+          </NavLink>
           <NavLink to="/training/daily" className={navClass}>
             Daily
           </NavLink>
         </nav>
       </header>
 
-      <Outlet />
+      <TrainingSettingsProvider>
+        <Outlet />
+      </TrainingSettingsProvider>
     </section>
   );
 }

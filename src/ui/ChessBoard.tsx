@@ -3,6 +3,7 @@ import type { GameState, Move, Piece, Square } from '../domain/chessTypes';
 import { getPiece } from '../domain/board';
 import { toAlgebraic } from '../domain/square';
 
+import { useCallback } from 'react';
 import { BoardGrid } from './chessboard/BoardGrid';
 import { useBoardGeometry } from './chessboard/useBoardGeometry';
 import { useBoardHighlights } from './chessboard/useBoardHighlights';
@@ -15,6 +16,9 @@ export type ChessBoardProps = {
   legalMovesFromSelection: Move[];
   /** Optional hint move (for highlighting). */
   hintMove?: { from: Square; to: Square } | null;
+  /** Hint rendering style controls. */
+  showHintSquares?: boolean;
+  showHintArrow?: boolean;
   /** Last move played (for highlighting). */
   lastMove?: { from: Square; to: Square } | null;
   /** Squares that should be highlighted as check (usually king square). */
@@ -57,7 +61,9 @@ export function ChessBoard({
   selectedSquare,
   legalMovesFromSelection,
   hintMove,
-  lastMove,
+    showHintSquares,
+    showHintArrow,
+    lastMove,
   checkSquares,
   onSquareClick,
   onMoveAttempt,
@@ -80,10 +86,12 @@ export function ChessBoard({
     state,
     selectedSquare: effectiveSelectedSquare,
     legalMoves: effectiveLegalMoves,
-    hintMove,
+    hintMove: showHintSquares === false ? null : hintMove,
     lastMove,
     checkSquares
   });
+
+  const squareAria = useCallback((sq: Square) => squareAriaLabel(state, sq), [state]);
 
   return (
     <BoardGrid
@@ -92,11 +100,14 @@ export function ChessBoard({
       files={geometry.files}
       ranks={geometry.ranks}
       displaySquares={geometry.displaySquares}
+      displayIndexBySquare={geometry.displayIndexBySquare}
       disabled={disabled}
+      hintMove={hintMove}
+      showHintArrow={showHintArrow}
       dragging={interaction.dragging}
       getSquareClass={highlights.getSquareClass}
       isLegalDestination={highlights.isLegalDestination}
-      squareAriaLabel={(sq) => squareAriaLabel(state, sq)}
+      squareAriaLabel={squareAria}
       getSquareHandlers={interaction.getSquareHandlers}
     />
   );

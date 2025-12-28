@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useGlobalHotkeys } from '../../ui/useGlobalHotkeys';
+import { useTrainingSettings } from './TrainingSettingsContext';
 
 import type { Color, GameState, Move, Square } from '../../domain/chessTypes';
 import { generateLegalMoves } from '../../domain/legalMoves';
@@ -114,6 +116,11 @@ function buildOpeningRefs(packs: TrainingPack[]): { refs: OpeningRef[]; warnings
 }
 
 export function TrainingOpeningsPage() {
+
+  const { settings } = useTrainingSettings();
+  const showHintSquares = settings.hintStyle === 'squares' || settings.hintStyle === 'both';
+  const showHintArrow = settings.hintStyle === 'arrow' || settings.hintStyle === 'both';
+
   const query = useQuery();
   const focusParam = query.get('focus');
   const focusKey = focusParam ? parseItemKey(focusParam) : null;
@@ -533,7 +540,20 @@ export function TrainingOpeningsPage() {
     return nodeStats.find((s) => s.key === currentNode.key) ?? null;
   }, [nodeStats, currentNode]);
 
-  return (
+  
+  useGlobalHotkeys(
+    [
+      { key: 'h', onKey: () => setShowHint((v) => !v) },
+      { key: 'n', onKey: () => void start(null) },
+      { key: 'r', onKey: () => resetToInitial() },
+      { key: 's', onKey: () => setShowHint(true) }
+    ],
+    // Keep deps limited to values that can change, to avoid re-registering hotkeys too often.
+    // (drillMode was removed during refactors; only track actual state that influences handlers.)
+    [running, current, drillColor, start, resetToInitial]
+  );
+
+return (
     <section className="stack">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
         <div>
@@ -677,6 +697,8 @@ export function TrainingOpeningsPage() {
               selectedSquare={selectedSquare}
               legalMovesFromSelection={legalMovesFromSelection}
               hintMove={hintMove}
+              showHintSquares={showHintSquares}
+              showHintArrow={showHintArrow}
               onSquareClick={onSquareClick}
               onMoveAttempt={onMoveAttemptNode}
               disabled={!running || state.sideToMove !== drillColor}
@@ -738,6 +760,8 @@ export function TrainingOpeningsPage() {
               selectedSquare={selectedSquare}
               legalMovesFromSelection={legalMovesFromSelection}
               hintMove={hintMove}
+              showHintSquares={showHintSquares}
+              showHintArrow={showHintArrow}
               onSquareClick={onSquareClick}
               onMoveAttempt={onMoveAttempt}
               disabled={!running || state.sideToMove !== drillColor}

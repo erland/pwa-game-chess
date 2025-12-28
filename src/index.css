@@ -2,7 +2,19 @@
   color-scheme: dark;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji",
     "Segoe UI Emoji";
+
+
+  --hl-selected: rgba(59, 130, 246, 0.55);
+  --hl-legal: rgba(34, 197, 94, 0.35);
+  --hl-capture: rgba(239, 68, 68, 0.40);
+  --hl-lastMove: rgba(234, 179, 8, 0.35);
+  --hl-check: rgba(236, 72, 153, 0.55);
+  --hl-hintFrom: rgba(139, 92, 246, 0.55);
+  --hl-hintArrow: rgba(255, 214, 0, 0.9);
+  --hl-hintTo: rgba(139, 92, 246, 0.85);
+  --hl-hintDot: rgba(34, 197, 94, 0.55);
 }
+
 
 body {
   margin: 0;
@@ -14,3 +26,33 @@ body {
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
+
+body.hl-default {
+  /* uses :root defaults */
+}
+
+body.hl-highContrast {
+  --hl-selected: rgba(96, 165, 250, 0.90);
+  --hl-legal: rgba(74, 222, 128, 0.80);
+  --hl-capture: rgba(248, 113, 113, 0.85);
+  --hl-lastMove: rgba(250, 204, 21, 0.80);
+  --hl-check: rgba(244, 114, 182, 0.85);
+  --hl-hintFrom: rgba(167, 139, 250, 0.85);
+  --hl-hintArrow: rgba(255, 214, 0, 0.9);
+  --hl-hintTo: rgba(167, 139, 250, 0.95);
+  --hl-hintDot: rgba(74, 222, 128, 0.80);
+}
+
+body.hl-colorBlindSafe {
+  /* Aim for distinct hues: blue, cyan/teal, orange, yellow, magenta */
+  --hl-selected: rgba(59, 130, 246, 0.75);
+  --hl-legal: rgba(6, 182, 212, 0.55);
+  --hl-capture: rgba(249, 115, 22, 0.65);
+  --hl-lastMove: rgba(234, 179, 8, 0.60);
+  --hl-check: rgba(236, 72, 153, 0.65);
+  --hl-hintFrom: rgba(168, 85, 247, 0.55);
+  --hl-hintArrow: rgba(255, 214, 0, 0.9);
+  --hl-hintTo: rgba(168, 85, 247, 0.85);
+  --hl-hintDot: rgba(6, 182, 212, 0.55);
+}
+

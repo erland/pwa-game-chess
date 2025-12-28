@@ -24,6 +24,11 @@ export interface LoadAllPacksResult extends LoadBuiltInPacksResult {
   customPacks: TrainingPack[];
 }
 
+// Cache built-in pack loading for the common runtime path (default fetch + inferred baseUrl).
+// This avoids refetching/parsing the same public JSON files when navigating between training pages.
+// NOTE: Tests pass a custom fetchFn, so caching is only enabled for the default `fetch`.
+let builtInCache: { baseUrl: string; promise: Promise<LoadBuiltInPacksResult> } | null = null;
+
 function getBaseUrl(): string {
   // Vite sets import.meta.env.BASE_URL (based on vite.config.ts `base`), but Jest does not.
   const viteBase = (import.meta as any)?.env?.BASE_URL;
@@ -47,7 +52,7 @@ function joinUrl(base: string, path: string): string {
   return `${b}${p}`;
 }
 
-async function fetchJson(fetchFn: typeof fetch, url: string): Promise<unknown> {
+async function fetchJson(fetchFn: any, url: string): Promise<unknown> {
   const res = await fetchFn(url);
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
   return await res.json();
@@ -59,57 +64,91 @@ async function fetchJson(fetchFn: typeof fetch, url: string): Promise<unknown> {
  * NOTE: Uses import.meta.env.BASE_URL so it works on GitHub Pages with Vite's base path.
  */
 export async function loadBuiltInPacks(
-  fetchFn: typeof fetch = fetch,
-  baseUrl: string = getBaseUrl()
+  fetchFn: any = (globalThis as any).fetch,
+  baseUrl: string = getBaseUrl(),
+  options?: { force?: boolean }
 ): Promise<LoadBuiltInPacksResult> {
+  const globalFetch: any = (globalThis as any).fetch;
+  if (
+    !options?.force &&
+    typeof fetchFn === 'function' &&
+    globalFetch &&
+    fetchFn === globalFetch &&
+    builtInCache &&
+    builtInCache.baseUrl === baseUrl
+  ) {
+    return await builtInCache.promise;
+  }
+
   const errors: PackLoadError[] = [];
   const packs: TrainingPack[] = [];
 
-  const indexUrl = joinUrl(baseUrl, 'training/packs/index.json');
-  let indexRaw: unknown;
-  try {
-    indexRaw = await fetchJson(fetchFn, indexUrl);
-  } catch (e) {
-    return { packs: [], errors: [{ message: `Failed to load pack index (${indexUrl}): ${(e as Error).message}` }] };
+  const work = (async (): Promise<LoadBuiltInPacksResult> => {
+
+    if (typeof fetchFn !== 'function') {
+      return {
+        packs: [],
+        errors: [
+          {
+            message:
+              'Failed to load pack index: fetchFn is not a function (provide a fetch implementation in this environment).'
+          }
+        ]
+      };
+    }
+
+    const indexUrl = joinUrl(baseUrl, 'training/packs/index.json');
+    let indexRaw: unknown;
+    try {
+      indexRaw = await fetchJson(fetchFn, indexUrl);
+    } catch (e) {
+      return { packs: [], errors: [{ message: `Failed to load pack index (${indexUrl}): ${(e as Error).message}` }] };
+    }
+
+    const indexV = validateTrainingPackIndex(indexRaw);
+    if (!indexV.ok) {
+      return { packs: [], errors: [{ message: `Invalid pack index: ${indexV.error}` }] };
+    }
+
+    const index: TrainingPackIndex = indexV.value;
+
+    await Promise.all(
+      index.packs.map(async (entry: TrainingPackIndexEntry) => {
+        const url = joinUrl(baseUrl, `training/packs/${entry.file}`);
+        try {
+          const raw = await fetchJson(fetchFn, url);
+          const val = validateTrainingPack(raw);
+          if (!val.ok) {
+            errors.push({ packId: entry.id, file: entry.file, message: `Invalid pack schema: ${val.error}` });
+            return;
+          }
+
+          if (val.value.id !== entry.id) {
+            errors.push({
+              packId: entry.id,
+              file: entry.file,
+              message: `Pack id mismatch: index has "${entry.id}", pack has "${val.value.id}"`
+            });
+            // Still include the pack.
+          }
+
+          packs.push(val.value);
+        } catch (e) {
+          errors.push({ packId: entry.id, file: entry.file, message: `Failed to load pack: ${(e as Error).message}` });
+        }
+      })
+    );
+
+    packs.sort((a, b) => a.title.localeCompare(b.title));
+
+    return { index, packs, errors };
+  })();
+
+  if (!options?.force && typeof fetchFn === 'function' && globalFetch && fetchFn === globalFetch) {
+    builtInCache = { baseUrl, promise: work };
   }
 
-  const indexV = validateTrainingPackIndex(indexRaw);
-  if (!indexV.ok) {
-    return { packs: [], errors: [{ message: `Invalid pack index: ${indexV.error}` }] };
-  }
-
-  const index: TrainingPackIndex = indexV.value;
-
-  await Promise.all(
-    index.packs.map(async (entry: TrainingPackIndexEntry) => {
-      const url = joinUrl(baseUrl, `training/packs/${entry.file}`);
-      try {
-        const raw = await fetchJson(fetchFn, url);
-        const val = validateTrainingPack(raw);
-        if (!val.ok) {
-          errors.push({ packId: entry.id, file: entry.file, message: `Invalid pack schema: ${val.error}` });
-          return;
-        }
-
-        if (val.value.id !== entry.id) {
-          errors.push({
-            packId: entry.id,
-            file: entry.file,
-            message: `Pack id mismatch: index has "${entry.id}", pack has "${val.value.id}"`
-          });
-          // Still include the pack.
-        }
-
-        packs.push(val.value);
-      } catch (e) {
-        errors.push({ packId: entry.id, file: entry.file, message: `Failed to load pack: ${(e as Error).message}` });
-      }
-    })
-  );
-
-  packs.sort((a, b) => a.title.localeCompare(b.title));
-
-  return { index, packs, errors };
+  return await work;
 }
 
 
@@ -119,7 +158,7 @@ export async function loadBuiltInPacks(
  * Custom packs override built-in packs with the same id.
  */
 export async function loadAllPacks(
-  fetchFn: typeof fetch = fetch,
+  fetchFn: any = (globalThis as any).fetch,
   baseUrl: string = getBaseUrl()
 ): Promise<LoadAllPacksResult> {
   const builtIn = await loadBuiltInPacks(fetchFn, baseUrl);
