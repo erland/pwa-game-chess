@@ -12,6 +12,7 @@ import { AppShell } from './ui/AppShell';
 import { TrainingShell } from './pages/training/TrainingShell';
 import { TrainingPlaceholderPage } from './pages/training/TrainingPlaceholderPage';
 import { TrainingDailyPage } from './pages/training/TrainingDailyPage';
+import { TrainingTacticsPage } from './pages/training/TrainingTacticsPage';
 
 export default function App() {
   return (
@@ -27,7 +28,7 @@ export default function App() {
             <Route index element={<TrainingHomePage />} />
             <Route
               path="tactics"
-              element={<TrainingPlaceholderPage title="Tactics" description="Tactics trainer will be implemented in a later step." />}
+              element={<TrainingTacticsPage />}
             />
             <Route
               path="openings"
