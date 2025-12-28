@@ -73,6 +73,11 @@ export function TrainingDailyPage() {
 
   const acc = useMemo(() => overallAccuracy(stats), [stats]);
 
+  const validItemKeys = useMemo(() => {
+    const keys = (queue?.itemKeys ?? []) as unknown[];
+    return keys.filter((k): k is string => typeof k === 'string' && k.length > 0);
+  }, [queue]);
+
   return (
     <section className="stack">
       <div className="card">
@@ -106,13 +111,13 @@ export function TrainingDailyPage() {
         {status === 'loading' && <p className="muted">Building queue…</p>}
         {status === 'error' && <p className="muted">Error: {error ?? 'Unknown error'}</p>}
 
-        {status === 'ready' && (!queue || queue.itemKeys.length === 0) && (
+        {status === 'ready' && (!queue || validItemKeys.length === 0) && (
           <p className="muted">No items available. Add packs under public/training/packs/.</p>
         )}
 
-        {status === 'ready' && queue && queue.itemKeys.length > 0 && (
+        {status === 'ready' && queue && validItemKeys.length > 0 && (
           <ol>
-            {queue.itemKeys.map((k) => {
+            {validItemKeys.map((k) => {
               const found = findItem(packs, k);
               const label = found ? `${found.pack.title} • ${found.item.type}` : k;
               const meta = found ? `themes: ${found.item.themes.join(', ') || '—'} • difficulty: ${found.item.difficulty}` : '';

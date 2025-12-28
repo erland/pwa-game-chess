@@ -314,7 +314,12 @@ export async function ensureDailyQueue(
   if (!isIsoDate(date)) throw new Error(`Invalid date: ${date}`);
 
   const existing = await getDailyQueue(date);
-  if (existing) return existing;
+  // Be defensive: older builds might have persisted an invalid queue shape.
+  if (existing && isValidDailyQueue(existing, date)) return existing;
+  if (existing) {
+    // remove corrupted entry and rebuild
+    await deleteDailyQueue(date);
+  }
 
   const ts = nowMs(nowOverrideMs);
   const stats = await listItemStats();
@@ -334,6 +339,35 @@ export async function ensureDailyQueue(
   store.put(queue);
   await txDone(tx);
   return queue;
+}
+
+function isValidDailyQueue(q: unknown, expectedDate: string): q is TrainingDailyQueue {
+  if (!q || typeof q !== 'object') return false;
+  const qq = q as any;
+  if (qq.date !== expectedDate) return false;
+  if (typeof qq.generatedAtMs !== 'number') return false;
+  if (!Array.isArray(qq.itemKeys)) return false;
+  // must all be strings (empty strings are considered invalid)
+  return qq.itemKeys.every((k: any) => typeof k === 'string' && k.length > 0);
+}
+
+async function deleteDailyQueue(date: string): Promise<void> {
+  // fallback
+  try {
+    const map = readQueueFallback();
+    if (map[date]) {
+      delete map[date];
+      writeQueueFallback(map);
+    }
+  } catch {
+    // ignore
+  }
+
+  if (!hasIndexedDb()) return;
+  const db = await openDb();
+  const tx = db.transaction(STORE_TRAINING_DAILY_QUEUE, 'readwrite');
+  tx.objectStore(STORE_TRAINING_DAILY_QUEUE).delete(date);
+  await txDone(tx);
 }
 
 // ---------- utilities (tests / debug) ----------

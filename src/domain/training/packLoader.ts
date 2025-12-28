@@ -25,10 +25,21 @@ export interface LoadAllPacksResult extends LoadBuiltInPacksResult {
 }
 
 function getBaseUrl(): string {
-  // Vite sets import.meta.env.BASE_URL, but Jest does not.
-  const base = (import.meta as any)?.env?.BASE_URL;
-  return typeof base === 'string' && base.length > 0 ? base : '/';
+  // Vite sets import.meta.env.BASE_URL (based on vite.config.ts `base`), but Jest does not.
+  const viteBase = (import.meta as any)?.env?.BASE_URL;
+  if (typeof viteBase === 'string' && viteBase.length > 0 && viteBase !== '/') return viteBase;
+
+  // When running under a sub-path (e.g. http://localhost:5173/pwa-game-chess/),
+  // fetch() calls must include that prefix. Infer it from window.location if possible.
+  if (typeof window !== 'undefined') {
+    const path = window.location?.pathname ?? '/';
+    const seg = path.split('/').filter(Boolean)[0]; // first path segment
+    if (seg) return `/${seg}/`;
+  }
+
+  return typeof viteBase === 'string' && viteBase.length > 0 ? viteBase : '/';
 }
+
 
 function joinUrl(base: string, path: string): string {
   const b = base.endsWith('/') ? base : `${base}/`;
