@@ -20,10 +20,29 @@ export function isMoveInSolutions(
   const ps = playedSan ? normalizeSan(playedSan) : null;
 
   for (const s of solutions) {
-    if (normalizeUci(s.uci) === pu) return true;
+    // v1 packs: compare against single uci.
+    if (typeof s.uci === 'string' && normalizeUci(s.uci) === pu) return true;
+
+    // v2 packs: compare against the first move in the line.
+    if (Array.isArray(s.lineUci) && s.lineUci.length > 0 && normalizeUci(s.lineUci[0]) === pu) return true;
+
     if (ps && s.san && normalizeSan(s.san) === ps) return true;
   }
   return false;
+}
+
+/** Normalize all solution lines to arrays of UCI strings (lowercased/trimmed). */
+export function getSolutionLines(item: TacticItem): string[][] {
+  const out: string[][] = [];
+  for (const s of item.solutions) {
+    const line = Array.isArray(s.lineUci) && s.lineUci.length > 0
+      ? s.lineUci
+      : typeof s.uci === 'string'
+        ? [s.uci]
+        : [];
+    if (line.length > 0) out.push(line.map((x) => normalizeUci(x)));
+  }
+  return out;
 }
 
 export function evaluateTacticMove(

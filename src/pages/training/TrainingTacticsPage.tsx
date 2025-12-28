@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { Move, Square } from '../../domain/chessTypes';
+import type { Color, GameState, Move, Square } from '../../domain/chessTypes';
 import { applyMove } from '../../domain/applyMove';
 import { findKing, isInCheck } from '../../domain/attack';
 import { generateLegalMoves } from '../../domain/legalMoves';
@@ -8,7 +8,7 @@ import { generatePseudoLegalMoves } from '../../domain/movegen';
 import { getPiece } from '../../domain/board';
 import type { Orientation } from '../../domain/localSetup';
 import { fromFEN } from '../../domain/notation/fen';
-import { moveToUci } from '../../domain/notation/uci';
+import { moveToUci, parseUciMove } from '../../domain/notation/uci';
 
 import type { CoachAnalysis, CoachHint, CoachMoveGrade, ProgressiveHintLevel } from '../../domain/coach/types';
 import { createStrongSearchCoach } from '../../domain/coach/strongSearchCoach';
@@ -17,6 +17,7 @@ import { getProgressiveHint } from '../../domain/coach/hints';
 import type { TacticItem, TrainingPack } from '../../domain/training/schema';
 import { loadBuiltInPacks } from '../../domain/training/packLoader';
 import { makeItemKey, type TrainingItemKey } from '../../domain/training/keys';
+import { getSolutionLines, normalizeUci } from '../../domain/training/tactics';
 import { listItemStats, recordAttempt, type TrainingItemStats } from '../../storage/training/trainingStore';
 import { useToastNotice } from '../game/useToastNotice';
 
@@ -44,8 +45,19 @@ type SessionState = {
   ref: TacticRef;
   baseState: ReturnType<typeof fromFEN>;
   state: ReturnType<typeof fromFEN>;
+  userColor: Color;
+  /** All solution lines (normalized UCI), from the pack item. */
+  solutionLines: string[][];
+  /** The chosen line after the first correct move (supports alternative first moves). */
+  activeLine: string[] | null;
+  /** Next expected ply index into activeLine (or solutionLines during the first move). */
+  ply: number;
+  /** Played line so far (including auto-played opponent replies). */
+  playedLineUci: string[];
+  /** Grades for each user move in this attempt (best-effort). */
+  userMoveGrades: CoachMoveGrade[];
   startedAtMs: number;
-  result: null | { correct: boolean; playedUci: string; solveMs: number };
+  result: null | { correct: boolean; playedLineUci: string[]; solveMs: number; message?: string };
   lastMove: { from: Square; to: Square } | null;
   // coach
   analysis: CoachAnalysis | null;
@@ -63,8 +75,22 @@ function isTactic(it: any): it is TacticItem {
   return it && typeof it === 'object' && it.type === 'tactic' && Array.isArray(it.solutions);
 }
 
-function normalizeUci(s: string): string {
-  return (s ?? '').trim().toLowerCase();
+function uciToLegalMove(state: GameState, uci: string): Move | null {
+  const parsed = parseUciMove(uci);
+  if (!parsed) return null;
+
+  const candidates = generateLegalMoves(state, parsed.from).filter((m) => m.to === parsed.to);
+  if (candidates.length === 0) return null;
+
+  if (parsed.promotion) {
+    const p = parsed.promotion;
+    const promo = candidates.find((m) => String(m.promotion).toLowerCase() === p);
+    return promo ?? null;
+  }
+
+  // Prefer non-promotion move if UCI doesn't include a promotion suffix.
+  const nonPromo = candidates.find((m) => !m.promotion);
+  return nonPromo ?? candidates[0] ?? null;
 }
 
 function pickNextTactic(refs: TacticRef[], stats: TrainingItemStats[], ts: number): TacticRef | null {
@@ -165,7 +191,7 @@ export function TrainingTacticsPage() {
     return () => {
       mounted = false;
     };
-  }, [session?.result?.correct]);
+  }, [session?.result ? 1 : 0]);
 
   const tacticRefs: TacticRef[] = useMemo(() => {
     if (solve.kind !== 'ready') return [];
@@ -210,12 +236,19 @@ export function TrainingTacticsPage() {
     clearNotice();
 
     const baseState = fromFEN(ref.item.position.fen);
+    const solutionLines = getSolutionLines(ref.item);
     setSelectedSquare(null);
     setPendingPromotion(null);
     setSession({
       ref,
       baseState,
       state: baseState,
+      userColor: baseState.sideToMove,
+      solutionLines,
+      activeLine: null,
+      ply: 0,
+      playedLineUci: [],
+      userMoveGrades: [],
       startedAtMs: nowMs(),
       result: null,
       lastMove: null,
@@ -243,6 +276,10 @@ export function TrainingTacticsPage() {
     setSession({
       ...session,
       state: session.baseState,
+      activeLine: null,
+      ply: 0,
+      playedLineUci: [],
+      userMoveGrades: [],
       startedAtMs: nowMs(),
       result: null,
       lastMove: null,
@@ -256,46 +293,149 @@ export function TrainingTacticsPage() {
 
   function commitMove(move: Move) {
     if (!session || session.result) return;
+    if (session.state.sideToMove !== session.userColor) return;
     resetCoaching();
     clearNotice();
 
     const playedUci = normalizeUci(moveToUci(move));
-    const ok = session.ref.item.solutions.some((s) => normalizeUci(s.uci) === playedUci);
 
-    const applied = applyMove(session.state, move);
+    const line = session.activeLine
+      ?? session.solutionLines.find((l) => l[session.ply] === playedUci)
+      ?? null;
+
+    const beforeState = session.state;
+    const applied = applyMove(beforeState, move);
     const solveMs = Math.max(0, Math.round(nowMs() - session.startedAtMs));
+
+    // Wrong move ends the attempt.
+    if (!line) {
+      setSession({
+        ...session,
+        state: applied,
+        result: { correct: false, playedLineUci: [...session.playedLineUci, playedUci], solveMs },
+        lastMove: { from: move.from, to: move.to },
+        hint: null,
+        hintLevel: 0,
+        coachBusy: true
+      });
+
+      void (async () => {
+        try {
+          await recordAttempt({
+            packId: session.ref.pack.id,
+            itemId: session.ref.item.itemId,
+            success: false,
+            solveMs
+          });
+        } catch {
+          // ignore
+        }
+
+        const ac = new AbortController();
+        abortRef.current = ac;
+        try {
+          const grade = await coach.gradeMove(beforeState, move, coachConfig, ac.signal);
+          if (ac.signal.aborted) return;
+          setSession((prev) => (prev ? { ...prev, grade, coachBusy: false, userMoveGrades: [...prev.userMoveGrades, grade] } : prev));
+        } catch {
+          if (ac.signal.aborted) return;
+          setSession((prev) => (prev ? { ...prev, coachBusy: false } : prev));
+        }
+      })();
+      return;
+    }
+
+    // Correct move: advance ply and auto-play opponent replies.
+    let nextState = applied;
+    let nextPly = session.ply + 1;
+    let nextPlayed = [...session.playedLineUci, playedUci];
+    let lastMove: { from: Square; to: Square } | null = { from: move.from, to: move.to };
+    let activeLine = session.activeLine ?? line;
+
+    // Auto-play any expected opponent moves until it's user's turn again or line ends.
+    while (nextPly < activeLine.length && nextState.sideToMove !== session.userColor) {
+      const expectedUci = activeLine[nextPly];
+      const om = uciToLegalMove(nextState, expectedUci);
+      if (!om) {
+        setSession({
+          ...session,
+          state: nextState,
+          activeLine,
+          ply: nextPly,
+          playedLineUci: nextPlayed,
+          result: {
+            correct: false,
+            playedLineUci: nextPlayed,
+            solveMs,
+            message: `Pack line contains an illegal move at ply ${nextPly + 1}: ${expectedUci}`
+          },
+          lastMove,
+          hint: null,
+          hintLevel: 0
+        });
+        return;
+      }
+      nextState = applyMove(nextState, om);
+      nextPlayed = [...nextPlayed, normalizeUci(expectedUci)];
+      lastMove = { from: om.from, to: om.to };
+      nextPly++;
+    }
+
+    const complete = nextPly >= activeLine.length;
 
     setSession({
       ...session,
-      state: applied,
-      result: { correct: ok, playedUci, solveMs },
-      lastMove: { from: move.from, to: move.to },
+      state: nextState,
+      userColor: session.userColor,
+      solutionLines: session.solutionLines,
+      activeLine,
+      ply: nextPly,
+      playedLineUci: nextPlayed,
+      result: complete ? { correct: true, playedLineUci: nextPlayed, solveMs } : null,
+      lastMove,
       hint: null,
       hintLevel: 0,
       coachBusy: true
     });
 
     void (async () => {
+      // Always grade the user's move (best-effort).
+      const ac = new AbortController();
+      abortRef.current = ac;
+      try {
+        const grade = await coach.gradeMove(beforeState, move, coachConfig, ac.signal);
+        if (ac.signal.aborted) return;
+        setSession((prev) => {
+          if (!prev) return prev;
+          const grades = [...prev.userMoveGrades, grade];
+          // Keep the "headline" grade as the worst label (highest cpLoss) if available.
+          let headline = grade;
+          if (grades.length > 1) {
+            const sortable = grades.filter((g) => Number.isFinite(g.cpLoss));
+            if (sortable.length > 0) {
+              sortable.sort((a, b) => (b.cpLoss ?? 0) - (a.cpLoss ?? 0));
+              headline = sortable[0];
+            }
+          }
+          return { ...prev, grade: headline, userMoveGrades: grades, coachBusy: false };
+        });
+      } catch {
+        if (ac.signal.aborted) return;
+        setSession((prev) => (prev ? { ...prev, coachBusy: false } : prev));
+      }
+
+      // Record attempt only when the line is complete.
+      const end = complete;
+      if (!end) return;
       try {
         await recordAttempt({
           packId: session.ref.pack.id,
           itemId: session.ref.item.itemId,
-          success: ok,
+          success: true,
           solveMs
         });
       } catch {
         // ignore
-      }
-
-      const ac = new AbortController();
-      abortRef.current = ac;
-      try {
-        const grade = await coach.gradeMove(session.baseState, move, coachConfig, ac.signal);
-        if (ac.signal.aborted) return;
-        setSession((prev) => (prev ? { ...prev, grade, coachBusy: false } : prev));
-      } catch {
-        if (ac.signal.aborted) return;
-        setSession((prev) => (prev ? { ...prev, coachBusy: false } : prev));
       }
     })();
   }
@@ -373,7 +513,7 @@ export function TrainingTacticsPage() {
     abortRef.current = ac;
     setSession((prev) => (prev ? { ...prev, coachBusy: true } : prev));
     try {
-      const analysis = await coach.analyze(session.baseState, session.baseState.sideToMove, coachConfig, ac.signal);
+      const analysis = await coach.analyze(session.state, session.state.sideToMove, coachConfig, ac.signal);
       if (ac.signal.aborted) return null;
       setSession((prev) => (prev ? { ...prev, analysis, coachBusy: false } : prev));
       return analysis;
@@ -392,13 +532,51 @@ export function TrainingTacticsPage() {
   }
 
   const orientation: Orientation = session?.baseState.sideToMove ?? 'w';
+  const displayedLine = useMemo(() => {
+    if (!session) return null;
+    // Before the first correct move we might have multiple alternatives; show the first.
+    return session.activeLine ?? session.solutionLines[0] ?? null;
+  }, [session]);
+
+  const progressText = useMemo(() => {
+    if (!session || !displayedLine) return null;
+    const totalUserMoves = Math.ceil(displayedLine.length / 2);
+    const nextUserMoveIndex = Math.floor(session.ply / 2) + 1;
+    return `Move ${Math.min(totalUserMoves, nextUserMoveIndex)} / ${totalUserMoves}`;
+  }, [session, displayedLine]);
+
+  async function giveUpShowLine() {
+    if (!session || session.result) return;
+    const solveMs = Math.max(0, Math.round(nowMs() - session.startedAtMs));
+    const line = displayedLine ?? [];
+    setSession({
+      ...session,
+      result: {
+        correct: false,
+        playedLineUci: session.playedLineUci,
+        solveMs,
+        message: line.length > 0 ? `Solution line: ${line.join(' ')}` : 'No solution line available.'
+      }
+    });
+    try {
+      await recordAttempt({
+        packId: session.ref.pack.id,
+        itemId: session.ref.item.itemId,
+        success: false,
+        solveMs
+      });
+    } catch {
+      // ignore
+    }
+  }
 
   return (
     <section className="stack">
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Tactics (single-move)</h3>
+        <h3 style={{ marginTop: 0 }}>Tactics (multi-move lines)</h3>
         <p className="muted">
-          Solve puzzles by finding the best move. This is a first version: single-move tactics + basic coach hints.
+          Solve puzzles by playing the best move(s). Some puzzles include expected opponent replies, so you may need to
+          find a line (not just one move).
         </p>
 
         {solve.kind === 'loading' && <p>Loading packs…</p>}
@@ -457,6 +635,28 @@ export function TrainingTacticsPage() {
             </div>
           )}
 
+          {(progressText || displayedLine) && (
+            <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+              {progressText ? (
+                <>
+                  Progress: <strong>{progressText}</strong>
+                </>
+              ) : null}
+              {displayedLine ? (
+                <>
+                  {progressText ? ' · ' : ''}
+                  Line length: <strong>{displayedLine.length}</strong> ply
+                </>
+              ) : null}
+            </p>
+          )}
+
+          {session.playedLineUci.length > 0 && (
+            <p className="muted" style={{ marginTop: 6 }}>
+              Played: <code>{session.playedLineUci.join(' ')}</code>
+            </p>
+          )}
+
           <ChessBoard
             state={session.state}
             orientation={orientation}
@@ -467,7 +667,7 @@ export function TrainingTacticsPage() {
             checkSquares={checkSquares}
             onSquareClick={handleSquareClick}
             onMoveAttempt={handleMoveAttempt}
-            disabled={!!session.result || session.coachBusy}
+            disabled={!!session.result}
           />
 
           {noticeText && (
@@ -511,6 +711,10 @@ export function TrainingTacticsPage() {
                 Clear hint
               </button>
             )}
+
+            <button type="button" className="btn btn-secondary" onClick={giveUpShowLine} disabled={!!session.result}>
+              Show line
+            </button>
           </div>
 
           {session.hint && session.hint.kind === 'line' && (
@@ -529,6 +733,12 @@ export function TrainingTacticsPage() {
                 <>
                   ❌ <strong>Not the expected move.</strong> ({session.result.solveMs} ms)
                 </>
+              )}
+
+              {session.result.message && (
+                <div style={{ marginTop: 8 }}>
+                  <span className="muted">{session.result.message}</span>
+                </div>
               )}
 
               {session.grade && (

@@ -31,8 +31,21 @@ export interface TrainingItemBase {
 }
 
 export interface TacticSolution {
-  uci: string;
+  /**
+   * Single-move solution (v1 packs).
+   *
+   * Prefer using lineUci for new packs.
+   */
+  uci?: string;
   san?: string;
+
+  /**
+   * Multi-move solution line (v2 packs).
+   *
+   * Includes both the player's moves and the expected opponent replies,
+   * starting from the side-to-move in the item's FEN.
+   */
+  lineUci?: string[];
 }
 
 export interface TacticItem extends TrainingItemBase {
@@ -206,10 +219,25 @@ export function validateTrainingPack(raw: unknown): ValidationResult<TrainingPac
         const sol = solsVal[j];
         const sp = `${path}.solutions[${j}]`;
         if (!isRecord(sol)) return { ok: false, error: at(sp, 'must be an object') };
-        const uciR = requireString(sol, 'uci', sp);
-        if (!uciR.ok) return uciR;
+
+        // v1: { uci: "e2e4" }
+        // v2: { lineUci: ["e2e4", "e7e5", ...] }
+        const lineUciVal = sol['lineUci'];
+        const hasLine = Array.isArray(lineUciVal) && lineUciVal.every((x) => typeof x === 'string');
+
+        const uci = optionalString(sol, 'uci');
         const san = optionalString(sol, 'san');
-        solutions.push({ uci: uciR.value, san });
+
+        if (!hasLine && (!uci || uci.trim().length === 0)) {
+          return { ok: false, error: at(sp, 'must have either "uci" (string) or "lineUci" (string[])') };
+        }
+
+        if (hasLine && (lineUciVal as any[]).length === 0) {
+          return { ok: false, error: at(`${sp}.lineUci`, 'must be a non-empty array when provided') };
+        }
+
+        const lineUci = hasLine ? (lineUciVal as string[]) : [uci as string];
+        solutions.push({ uci: uci ?? lineUci[0], san, lineUci });
       }
       items.push({
         ...common,

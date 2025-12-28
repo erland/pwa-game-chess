@@ -1,6 +1,6 @@
 import type { Move } from '../domain/chessTypes';
 import { fromFEN } from '../domain/notation/fen';
-import { evaluateTacticMove, isMoveInSolutions } from '../domain/training/tactics';
+import { evaluateTacticMove, getSolutionLines, isMoveInSolutions } from '../domain/training/tactics';
 import type { TacticItem } from '../domain/training/schema';
 
 describe('tactics helpers', () => {
@@ -8,6 +8,20 @@ describe('tactics helpers', () => {
     expect(
       isMoveInSolutions('H7G7', null, [{ uci: 'h7g7', san: 'Qg7#' }])
     ).toBe(true);
+  });
+
+  it('supports multi-move solution lines (matches first move + exposes normalized lines)', () => {
+    const item: TacticItem = {
+      type: 'tactic',
+      itemId: 't2',
+      difficulty: 1,
+      themes: ['demo'],
+      position: { fen: '6k1/7Q/7K/8/8/8/8/8 w - - 0 1' },
+      solutions: [{ lineUci: ['H7G7', 'g8h8'] }]
+    };
+
+    expect(isMoveInSolutions('h7g7', null, item.solutions)).toBe(true);
+    expect(getSolutionLines(item)).toEqual([['h7g7', 'g8h8']]);
   });
 
   it('evaluateTacticMove marks correct move for the starter pack tactic', () => {
