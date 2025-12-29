@@ -153,6 +153,11 @@ h1 {
   background: rgba(255, 255, 255, 0.04);
 }
 
+
+.card.gameArea {
+  border-radius: 0;
+}
+
 .content {
   display: grid;
   position: relative;
@@ -364,11 +369,68 @@ h1 {
 }
 
 .boardWrap {
+  /* "Wooden" framed board with coordinates on all sides (mobile friendly) */
+  --coord: 28px;
+  width: min(560px, 100%);
   display: grid;
   position: relative;
-  gap: 8px;
-  width: min(560px, 100%);
-  position: relative;
+  grid-template-columns: var(--coord) 1fr var(--coord);
+  grid-template-rows: var(--coord) 1fr var(--coord);
+  grid-template-areas:
+    "tl top tr"
+    "left board right"
+    "bl bottom br";
+  gap: 0px;
+  padding: 0px;
+  border-radius: 0px;
+  background: linear-gradient(180deg, rgba(126, 87, 58, 0.95), rgba(95, 64, 40, 0.95));
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), inset 0 0 0 2px rgba(250, 245, 235, 0.12);
+}
+
+/* Explicit grid placement so we can hide rails on small screens without reflow bugs */
+.boardCorner-tl { grid-area: tl; }
+.boardCorner-tr { grid-area: tr; }
+.boardCorner-bl { grid-area: bl; }
+.boardCorner-br { grid-area: br; }
+.boardCoords-top { grid-area: top; }
+.boardCoords-left { grid-area: left; }
+.boardCoords-right { grid-area: right; }
+.boardCoords-bottom { grid-area: bottom; }
+.board { grid-area: board; }
+
+/* iPhone / small screens: maximize board area by hiding right + bottom coordinates */
+@media (max-width: 520px) {
+  .boardWrap {
+    --coord: 18px;
+    grid-template-columns: var(--coord) 1fr;
+    grid-template-rows: var(--coord) 1fr;
+    grid-template-areas:
+      "tl top"
+      "left board";
+    border-width: 1px;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(250, 245, 235, 0.10);
+  }
+
+  .boardCoords {
+    font-size: 10px;
+  }
+
+  /*
+    Important: use higher-specificity selectors so these still win even though
+    .boardCoords/.boardCorner set display later in the stylesheet.
+  */
+  .boardCoords.boardCoords-right,
+  .boardCoords.boardCoords-bottom,
+  .boardCorner.boardCorner-tr,
+  .boardCorner.boardCorner-bl,
+  .boardCorner.boardCorner-br {
+    display: none;
+  }
+
+  .board {
+    border-width: 1px;
+  }
 }
 
 .boardRow {
@@ -379,21 +441,37 @@ h1 {
   align-items: stretch;
 }
 
+.boardCorner {
+  display: block;
+}
+
 .boardCoords {
   display: grid;
   position: relative;
-  color: rgba(229, 231, 235, 0.6);
+  color: rgba(250, 245, 235, 0.88);
   font-size: 12px;
+  font-weight: 700;
   user-select: none;
 }
 
 .boardCoords-top {
   grid-template-columns: repeat(8, 1fr);
-  margin-left: 32px;
+  align-items: center;
 }
 
 .boardCoords-left {
   grid-template-rows: repeat(8, 1fr);
+  align-items: center;
+}
+
+.boardCoords-right {
+  grid-template-rows: repeat(8, 1fr);
+  align-items: center;
+}
+
+.boardCoords-bottom {
+  grid-template-columns: repeat(8, 1fr);
+  align-items: center;
 }
 
 .coord {
@@ -409,9 +487,10 @@ h1 {
   position: relative;
   grid-template-columns: repeat(8, 1fr);
   grid-template-rows: repeat(8, 1fr); /* ✅ add this */
-  border-radius: 16px;
+  border-radius: 14px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(250, 245, 235, 0.35);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.12);
 }
 
 .boardSq {
@@ -443,11 +522,11 @@ h1 {
 }
 
 .boardSq-light {
-  background: rgba(255, 255, 255, 0.10);
+  background: linear-gradient(180deg, rgba(226, 213, 183, 0.98), rgba(214, 198, 164, 0.98));
 }
 
 .boardSq-dark {
-  background: rgba(0, 0, 0, 0.22);
+  background: linear-gradient(180deg, rgba(133, 96, 63, 0.98), rgba(112, 79, 52, 0.98));
 }
 
 .boardPiece {

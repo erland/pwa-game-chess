@@ -53,6 +53,7 @@ export function BoardGrid(props: {
 
   return (
     <div className="boardWrap">
+      <div className="boardCorner boardCorner-tl" aria-hidden />
       <div className="boardCoords boardCoords-top" aria-hidden>
         {files.map((f) => (
           <div key={f} className="coord">
@@ -60,24 +61,24 @@ export function BoardGrid(props: {
           </div>
         ))}
       </div>
+      <div className="boardCorner boardCorner-tr" aria-hidden />
 
-      <div className="boardRow">
-        <div className="boardCoords boardCoords-left" aria-hidden>
-          {ranks.map((r) => (
-            <div key={r} className="coord">
-              {r}
-            </div>
-          ))}
-        </div>
+      <div className="boardCoords boardCoords-left" aria-hidden>
+        {ranks.map((r) => (
+          <div key={r} className="coord">
+            {r}
+          </div>
+        ))}
+      </div>
 
-        <div
-          ref={boardRef}
-          className="board"
-          role="grid"
-          aria-label="Chess board"
-          // Prevent touch scrolling from interfering with drag.
-          style={{ touchAction: 'none' }}
-        >
+      <div
+        ref={boardRef}
+        className="board"
+        role="grid"
+        aria-label="Chess board"
+        // Prevent touch scrolling from interfering with drag.
+        style={{ touchAction: 'none' }}
+      >
           {arrow && (
             <svg className="boardOverlay" viewBox="0 0 8 8" aria-hidden="true">
               <defs>
@@ -124,22 +125,39 @@ export function BoardGrid(props: {
               />
             );
           })}
-        </div>
-
-        {dragging?.isDragging && (
-          <div className="dragLayer" aria-hidden>
-            <div
-              className="dragPiece"
-              style={{
-                left: dragging.clientX,
-                top: dragging.clientY
-              }}
-            >
-              <PieceIcon ariaHidden color={dragging.piece.color} type={dragging.piece.type} />
-            </div>
-          </div>
-        )}
       </div>
+
+      <div className="boardCoords boardCoords-right" aria-hidden>
+        {ranks.map((r) => (
+          <div key={r} className="coord">
+            {r}
+          </div>
+        ))}
+      </div>
+
+      <div className="boardCorner boardCorner-bl" aria-hidden />
+      <div className="boardCoords boardCoords-bottom" aria-hidden>
+        {files.map((f) => (
+          <div key={f} className="coord">
+            {f}
+          </div>
+        ))}
+      </div>
+      <div className="boardCorner boardCorner-br" aria-hidden />
+
+      {dragging?.isDragging && (
+        <div className="dragLayer" aria-hidden>
+          <div
+            className="dragPiece"
+            style={{
+              left: dragging.clientX,
+              top: dragging.clientY
+            }}
+          >
+            <PieceIcon ariaHidden color={dragging.piece.color} type={dragging.piece.type} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

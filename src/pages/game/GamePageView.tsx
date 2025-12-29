@@ -92,7 +92,7 @@ export function GamePageView(props: {
   if (setupMissing) {
     return (
       <section className="stack">
-        <div className="card">
+        <div className="card gameArea">
           <h2>Missing or invalid setup</h2>
           <p className="muted">This page expects setup parameters in the URL. Please go back and start a new game.</p>
           <div className="actions">
@@ -110,7 +110,7 @@ export function GamePageView(props: {
 
   return (
     <section className="stack">
-      <div className="card">
+      <div className="card gameArea">
         <h2>{mode === 'local' ? 'Local game' : 'Vs computer game'}</h2>
         {mode === 'vsComputer' && (
           <p className="muted vsHeaderLine">
@@ -293,7 +293,7 @@ export function GamePageView(props: {
         )}
       </div>
 
-      <div className="card">
+      <div className="card gameArea">
         <h3 className="h3">Board</h3>
         <CapturedPiecesPanel captured={capturedPieces} showDelta />
 
