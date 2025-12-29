@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "gen:lichess:packs": "node tools/lichess-pack-generator/generate-lichess-packs.mjs --input ./data/lichess_db_puzzle.csv --outDir ./public/training/packs/generated --indexFile ./public/training/packs/index.json --replaceGenerated --maxPerPack 2000"
   },
   "dependencies": {
     "react": "^18.3.1",
