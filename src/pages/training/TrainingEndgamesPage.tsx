@@ -11,6 +11,7 @@ import { tryParseFEN } from '../../domain/notation/fen';
 import { moveToUci } from '../../domain/notation/uci';
 import { getGameStatus } from '../../domain/gameStatus';
 import { cloneGameState } from '../../domain/cloneGameState';
+import { createInitialGameState } from '../../domain/gameState';
 
 function findKingSquare(state: GameState, color: Color): Square | null {
   for (let i = 0; i < 64; i++) {
@@ -30,6 +31,7 @@ import { computeEndgameMoveFeedback, suggestAutoCheckpoint } from '../../domain/
 
 import { ChessBoard } from '../../ui/ChessBoard';
 import { PromotionChooser } from '../../ui/PromotionChooser';
+import { useMoveInput, type PendingPromotion } from '../../ui/chessboard/useMoveInput';
 
 import { createStrongSearchCoach, getProgressiveHint } from '../../domain/coach';
 import type { Coach, CoachAnalysis, CoachHint, CoachMoveGrade } from '../../domain/coach';
@@ -70,7 +72,6 @@ type EndgameSession = {
   playedLineUci: string[];
   lastMove: Move | null;
   lastMoveColor: Color | null;
-  pendingPromotion: { color: Color; options: Move[] } | null;
 
   analysis: CoachAnalysis | null;
   hint: CoachHint | null;
@@ -161,9 +162,23 @@ export function TrainingEndgamesPage() {
   const [stats, setStats] = useState<TrainingItemStats[]>([]);
   const [session, setSession] = useState<EndgameSession | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
 
   const coachRef = useRef<Coach | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Shared board input logic (selection, click-to-move, drag-to-move, promotions).
+  const fallbackState = useMemo(() => createInitialGameState(), []);
+  const moveInput = useMoveInput({
+    state: session?.state ?? fallbackState,
+    selectedSquare,
+    setSelectedSquare,
+    pendingPromotion,
+    setPendingPromotion,
+    disabled: !session || Boolean(session.result),
+    onMove: (move) => applyAndAdvance(move),
+    illegalNoticeMode: 'none'
+  });
 
   useEffect(() => {
     if (!coachRef.current) coachRef.current = createStrongSearchCoach();
@@ -227,10 +242,7 @@ export function TrainingEndgamesPage() {
     return k == null ? [] : [k];
   }, [session]);
 
-  const legalMovesFromSelection = useMemo(() => {
-    if (!session || selectedSquare == null) return [] as Move[];
-    return generateLegalMoves(session.state, selectedSquare);
-  }, [session, selectedSquare]);
+  const legalMovesFromSelection = moveInput.legalMovesFromSelection;
 
   const hintMove = useMemo(() => {
     if (!session?.hint) return null;
@@ -267,6 +279,8 @@ export function TrainingEndgamesPage() {
     if (!cp) return;
 
     setSelectedSquare(null);
+    setPendingPromotion(null);
+    setPendingPromotion(null);
     abortRef.current?.abort();
     abortRef.current = null;
 
@@ -278,7 +292,6 @@ export function TrainingEndgamesPage() {
       playedLineUci: session.playedLineUci.slice(0, Math.min(session.playedLineUci.length, cp.ply)),
       lastMove: null,
       lastMoveColor: null,
-      pendingPromotion: null,
       analysis: null,
       hint: null,
       lastGrade: null,
@@ -319,7 +332,6 @@ export function TrainingEndgamesPage() {
       playedLineUci: [],
       lastMove: null,
       lastMoveColor: null,
-      pendingPromotion: null,
       analysis: null,
       hint: null,
       lastGrade: null,
@@ -346,54 +358,12 @@ export function TrainingEndgamesPage() {
     setSession(s);
   }
 
-  function handleSquareClick(square: Square) {
-    if (!session) return;
-    if (session.result) return;
-    if (session.pendingPromotion) return;
-
-    // Selecting a piece
-    const legalFrom = generateLegalMoves(session.state, square);
-    if (legalFrom.length > 0) {
-      setSelectedSquare(square);
-      return;
-    }
-
-    // Attempt a move by clicking destination while having a selection
-    if (selectedSquare != null && selectedSquare !== square) {
-      const candidates = generateLegalMoves(session.state, selectedSquare).filter((m) => m.to === square);
-      if (candidates.length === 0) return;
-      tryApplyCandidates(selectedSquare, square, candidates);
-    }
-  }
-
-  function tryApplyCandidates(from: Square, to: Square, candidates: Move[]) {
-    if (!session) return;
-    if (session.result) return;
-
-    if (candidates.length > 1) {
-      // Promotion: show chooser.
-      setSession({
-        ...session,
-        pendingPromotion: { color: session.state.sideToMove, options: candidates }
-      });
-      return;
-    }
-
-    const mv = candidates[0];
-    applyAndAdvance(mv);
-  }
-
-  function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
-    if (!session) return;
-    if (session.result) return;
-    if (session.pendingPromotion) return;
-
-    if (candidates.length === 0) return;
-    tryApplyCandidates(from, to, candidates);
-  }
+  // Move input is handled by the shared `useMoveInput` hook.
 
   async function applyAndAdvance(move: Move) {
     if (!session) return;
+    setSelectedSquare(null);
+    setPendingPromotion(null);
     clearCoaching();
 
     const goal = parseEndgameGoal(session.ref.goalText);
@@ -471,7 +441,6 @@ export function TrainingEndgamesPage() {
       playedLineUci: played,
       lastMove,
       lastMoveColor,
-      pendingPromotion: null,
       lastGrade,
       feedback,
       totalCpLoss,
@@ -766,16 +735,16 @@ return (
         <ChessBoard
           state={session.state}
           orientation={orientation}
-          selectedSquare={selectedSquare}
+          selectedSquare={moveInput.selectedSquare}
           legalMovesFromSelection={legalMovesFromSelection}
           hintMove={hintMove}
           showHintSquares={showHintSquares}
           showHintArrow={showHintArrow}
           lastMove={session.lastMove}
           checkSquares={checkSquares}
-          onSquareClick={handleSquareClick}
-          onMoveAttempt={handleMoveAttempt}
-          disabled={!!session.result}
+          onSquareClick={moveInput.handleSquareClick}
+          onMoveAttempt={moveInput.handleMoveAttempt}
+          disabled={!!session.result || Boolean(pendingPromotion)}
         />
 
         {!session.result && (session.feedback || session.lastGrade) && (
@@ -816,12 +785,12 @@ return (
           </div>
         )}
 
-        {session.pendingPromotion && (
+        {pendingPromotion && (
           <PromotionChooser
-            color={session.pendingPromotion.color}
-            options={session.pendingPromotion.options}
-            onChoose={(mv) => applyAndAdvance(mv)}
-            onCancel={() => setSession({ ...session, pendingPromotion: null })}
+            color={session.state.sideToMove}
+            options={pendingPromotion.options}
+            onChoose={moveInput.choosePromotion}
+            onCancel={moveInput.cancelPromotion}
           />
         )}
 

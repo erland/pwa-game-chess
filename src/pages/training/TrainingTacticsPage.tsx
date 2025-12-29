@@ -6,9 +6,7 @@ import { useTrainingSettings } from './TrainingSettingsContext';
 import type { Color, GameState, Move, Square } from '../../domain/chessTypes';
 import { applyMove } from '../../domain/applyMove';
 import { findKing, isInCheck } from '../../domain/attack';
-import { generateLegalMoves } from '../../domain/legalMoves';
-import { generatePseudoLegalMoves } from '../../domain/movegen';
-import { getPiece } from '../../domain/board';
+import { createInitialGameState } from '../../domain/gameState';
 import type { Orientation } from '../../domain/localSetup';
 import { fromFEN } from '../../domain/notation/fen';
 import { moveToUci } from '../../domain/notation/uci';
@@ -34,16 +32,11 @@ import { useToastNotice } from '../game/useToastNotice';
 
 import { ChessBoard } from '../../ui/ChessBoard';
 import { PromotionChooser } from '../../ui/PromotionChooser';
+import { useMoveInput, type PendingPromotion } from '../../ui/chessboard/useMoveInput';
 
 type TacticRef = {
   pack: TrainingPack;
   item: TacticItem;
-};
-
-type PendingPromotion = {
-  from: Square;
-  to: Square;
-  options: Move[];
 };
 
 type SolveState =
@@ -168,6 +161,21 @@ export function TrainingTacticsPage() {
 
   const { noticeText, showNotice, clearNotice } = useToastNotice(1500);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Move input is shared with the main game UI. Provide a stable fallback state
+  // so the hook is always called consistently even before a session is started.
+  const fallbackState = useMemo(() => createInitialGameState(), []);
+  const moveInput = useMoveInput({
+    state: session?.state ?? fallbackState,
+    selectedSquare,
+    setSelectedSquare,
+    pendingPromotion,
+    setPendingPromotion,
+    disabled: !session || Boolean(session.result),
+    onMove: (move) => commitMove(move),
+    showNotice,
+    illegalNoticeMode: 'pseudo'
+  });
 
   const coach = useMemo(() => createStrongSearchCoach(), []);
   const coachConfig = useMemo(() => ({ maxDepth: 4, thinkTimeMs: 0 }), []);
@@ -304,10 +312,7 @@ export function TrainingTacticsPage() {
     return null;
   }, [session?.hint]);
 
-  const legalMovesFromSelection = useMemo(() => {
-    if (!session || selectedSquare == null) return [] as Move[];
-    return generateLegalMoves(session.state, selectedSquare);
-  }, [session, selectedSquare]);
+  const legalMovesFromSelection = moveInput.legalMovesFromSelection;
 
   function resetCoaching() {
     abortRef.current?.abort();
@@ -526,70 +531,7 @@ export function TrainingTacticsPage() {
     })();
   }
 
-  function tryApplyCandidates(from: Square, to: Square, candidates: Move[]) {
-    if (!session || session.result) return;
-
-    // Promotions generate multiple legal moves for the same (from,to) with different piece types.
-    const promo = candidates.filter((m) => m.promotion);
-    if (promo.length > 0) {
-      setPendingPromotion({ from, to, options: promo });
-      return;
-    }
-
-    if (candidates.length > 0) {
-      commitMove(candidates[0]);
-      setSelectedSquare(null);
-    }
-  }
-
-  function handleSquareClick(square: Square) {
-    if (!session) return;
-    if (session.result) return;
-    if (pendingPromotion) return;
-
-    const piece = getPiece(session.state.board, square);
-    const isOwnPiece = piece != null && piece.color === session.state.sideToMove;
-
-    if (selectedSquare === null) {
-      if (isOwnPiece) setSelectedSquare(square);
-      return;
-    }
-
-    if (square === selectedSquare) {
-      setSelectedSquare(null);
-      return;
-    }
-
-    if (isOwnPiece) {
-      setSelectedSquare(square);
-      return;
-    }
-
-    const from = selectedSquare;
-    const candidates = generateLegalMoves(session.state, from).filter((m) => m.to === square);
-    if (candidates.length === 0) {
-      const pseudo = generatePseudoLegalMoves(session.state, from).filter((m) => m.to === square);
-      showNotice(pseudo.length > 0 ? 'King would be in check' : 'Illegal move');
-      return;
-    }
-
-    tryApplyCandidates(from, square, candidates);
-  }
-
-  function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
-    if (!session) return;
-    if (session.result) return;
-    if (pendingPromotion) return;
-
-    if (candidates.length === 0) {
-      const pseudo = generatePseudoLegalMoves(session.state, from).filter((m) => m.to === to);
-      showNotice(pseudo.length > 0 ? 'King would be in check' : 'Illegal move');
-      setSelectedSquare(from);
-      return;
-    }
-
-    tryApplyCandidates(from, to, candidates);
-  }
+  // Move input handlers are provided by `useMoveInput`.
 
   async function ensureAnalysis(): Promise<CoachAnalysis | null> {
     if (!session) return null;
@@ -894,16 +836,16 @@ return (
           <ChessBoard
             state={session.state}
             orientation={orientation}
-            selectedSquare={selectedSquare}
+            selectedSquare={moveInput.selectedSquare}
             legalMovesFromSelection={legalMovesFromSelection}
             hintMove={hintMove}
             showHintSquares={showHintSquares}
             showHintArrow={showHintArrow}
             lastMove={session.lastMove}
             checkSquares={checkSquares}
-            onSquareClick={handleSquareClick}
-            onMoveAttempt={handleMoveAttempt}
-            disabled={!!session.result}
+            onSquareClick={moveInput.handleSquareClick}
+            onMoveAttempt={moveInput.handleMoveAttempt}
+            disabled={!!session.result || Boolean(pendingPromotion)}
           />
 
           {noticeText && (
@@ -1014,11 +956,8 @@ return (
             <PromotionChooser
               color={session.state.sideToMove}
               options={pendingPromotion.options}
-              onChoose={(m) => {
-                setPendingPromotion(null);
-                commitMove(m);
-              }}
-              onCancel={() => setPendingPromotion(null)}
+              onChoose={moveInput.choosePromotion}
+              onCancel={moveInput.cancelPromotion}
             />
           )}
         </div>

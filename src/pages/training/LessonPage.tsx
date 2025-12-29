@@ -5,9 +5,7 @@ import { useGlobalHotkeys } from '../../ui/useGlobalHotkeys';
 import { useTrainingSettings } from './TrainingSettingsContext';
 import type { Move, Square } from '../../domain/chessTypes';
 import { applyMove } from '../../domain/applyMove';
-import { generateLegalMoves } from '../../domain/legalMoves';
-import { generatePseudoLegalMoves } from '../../domain/movegen';
-import { getPiece } from '../../domain/board';
+import { createInitialGameState } from '../../domain/gameState';
 import type { Orientation } from '../../domain/localSetup';
 import { fromFEN } from '../../domain/notation/fen';
 import { moveToUci, parseUciMove } from '../../domain/notation/uci';
@@ -24,23 +22,20 @@ import { useToastNotice } from '../game/useToastNotice';
 import { ChessBoard } from '../../ui/ChessBoard';
 import { PromotionChooser } from '../../ui/PromotionChooser';
 import { MarkdownLite } from '../../ui/MarkdownLite';
+import { useMoveInput, type PendingPromotion } from '../../ui/chessboard/useMoveInput';
 
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
   | { kind: 'ready'; pack: TrainingPack; item: LessonItem; blocks: LessonBlock[]; key: TrainingItemKey };
 
-type PendingPromotion = { from: Square; to: Square; options: Move[] };
-
 type TryMoveState = {
   base: ReturnType<typeof fromFEN>;
   state: ReturnType<typeof fromFEN>;
-  selectedSquare: Square | null;
   hintMove: { from: Square; to: Square } | null;
   lastMove: { from: Square; to: Square } | null;
   solved: boolean;
   feedback: string | null;
-  pendingPromotion: PendingPromotion | null;
 };
 
 function uciList(v: string | string[]): string[] {
@@ -70,6 +65,27 @@ export function LessonPage() {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' });
   const [blockIndex, setBlockIndex] = useState(0);
   const [tryMove, setTryMove] = useState<TryMoveState | null>(null);
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+
+  const current = useMemo(() => {
+    if (load.kind !== 'ready') return null;
+    const b = load.blocks[blockIndex] ?? null;
+    return b;
+  }, [load, blockIndex]);
+
+  const fallbackState = useMemo(() => createInitialGameState(), []);
+  const moveInput = useMoveInput({
+    state: tryMove?.state ?? fallbackState,
+    selectedSquare,
+    setSelectedSquare,
+    pendingPromotion,
+    setPendingPromotion,
+    disabled: !tryMove || !current || current.kind !== 'tryMove' || tryMove.solved,
+    onMove: (move) => tryApplyMove(move),
+    showNotice,
+    illegalNoticeMode: 'pseudo'
+  });
 
   // Load packs + lesson item.
   useEffect(() => {
@@ -108,31 +124,27 @@ export function LessonPage() {
     };
   }, [packId, itemId]);
 
-  const current = useMemo(() => {
-    if (load.kind !== 'ready') return null;
-    const b = load.blocks[blockIndex] ?? null;
-    return b;
-  }, [load, blockIndex]);
-
   // Initialize interactive state when we enter a tryMove block.
   useEffect(() => {
     if (load.kind !== 'ready') return;
     const block = current;
     if (!block || block.kind !== 'tryMove') {
       setTryMove(null);
+      setSelectedSquare(null);
+      setPendingPromotion(null);
       return;
     }
 
     const base = fromFEN(block.fen);
+    setSelectedSquare(null);
+    setPendingPromotion(null);
     setTryMove({
       base,
       state: base,
-      selectedSquare: null,
       hintMove: null,
       lastMove: null,
       solved: false,
-      feedback: null,
-      pendingPromotion: null
+      feedback: null
     });
   }, [load, current]);
 
@@ -187,8 +199,12 @@ export function LessonPage() {
     );
   }
 
-function tryApplyMove(move: Move) {
+  function tryApplyMove(move: Move) {
     if (!tryMove || !current || current.kind !== 'tryMove') return;
+
+    // Clear any in-progress input state on each attempted move.
+    setSelectedSquare(null);
+    setPendingPromotion(null);
 
     const played = normalizeUci(moveToUci(move));
     const isCorrect = expectedMoves.includes(played);
@@ -200,8 +216,6 @@ function tryApplyMove(move: Move) {
             ...prev,
             state: next,
             lastMove: { from: move.from, to: move.to },
-            selectedSquare: null,
-            pendingPromotion: null,
             solved: isCorrect,
             feedback: isCorrect ? 'Correct!' : prev.feedback
           }
@@ -214,12 +228,20 @@ function tryApplyMove(move: Move) {
     const hintText = current.hintMarkdown ?? 'Try again.';
 
     if (behavior === 'rewind') {
-      setTryMove((prev) => (prev ? { ...prev, state: prev.base, selectedSquare: null, lastMove: null, feedback: hintText } : prev));
+      setTryMove((prev) => (prev ? { ...prev, state: prev.base, lastMove: null, feedback: hintText } : prev));
       return;
     }
 
     if (behavior === 'reveal') {
-      setTryMove((prev) => (prev ? { ...prev, hintMove: pickHintMove(current.expectedUci), feedback: `Expected: ${uciList(current.expectedUci).join(' or ')}` } : prev));
+      setTryMove((prev) =>
+        prev
+          ? {
+              ...prev,
+              hintMove: pickHintMove(current.expectedUci),
+              feedback: `Expected: ${uciList(current.expectedUci).join(' or ')}`
+            }
+          : prev
+      );
       return;
     }
 
@@ -227,72 +249,19 @@ function tryApplyMove(move: Move) {
     setTryMove((prev) => (prev ? { ...prev, feedback: hintText } : prev));
   }
 
-  function handleSquareClick(square: Square) {
-    if (!tryMove || !current || current.kind !== 'tryMove') return;
-    if (tryMove.solved) return;
-    if (tryMove.pendingPromotion) return;
-
-    const piece = getPiece(tryMove.state.board, square);
-    const isOwnPiece = piece != null && piece.color === tryMove.state.sideToMove;
-
-    if (tryMove.selectedSquare === null) {
-      if (isOwnPiece) setTryMove((prev) => (prev ? { ...prev, selectedSquare: square } : prev));
-      return;
-    }
-
-    if (square === tryMove.selectedSquare) {
-      setTryMove((prev) => (prev ? { ...prev, selectedSquare: null } : prev));
-      return;
-    }
-
-    if (isOwnPiece) {
-      setTryMove((prev) => (prev ? { ...prev, selectedSquare: square } : prev));
-      return;
-    }
-
-    const from = tryMove.selectedSquare;
-    const candidates = generateLegalMoves(tryMove.state, from).filter((m) => m.to === square);
-    if (candidates.length === 0) {
-      const pseudo = generatePseudoLegalMoves(tryMove.state, from).filter((m) => m.to === square);
-      showNotice(pseudo.length > 0 ? 'King would be in check' : 'Illegal move');
-      return;
-    }
-
-    handleMoveAttempt(from, square, candidates);
-  }
-
-  function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
-    if (!tryMove || !current || current.kind !== 'tryMove') return;
-    if (tryMove.solved) return;
-    if (tryMove.pendingPromotion) return;
-
-    if (candidates.length === 0) {
-      const pseudo = generatePseudoLegalMoves(tryMove.state, from).filter((m) => m.to === to);
-      showNotice(pseudo.length > 0 ? 'King would be in check' : 'Illegal move');
-      setTryMove((prev) => (prev ? { ...prev, selectedSquare: from } : prev));
-      return;
-    }
-
-    const promo = candidates.filter((m) => m.promotion);
-    if (promo.length > 0) {
-      setTryMove((prev) => (prev ? { ...prev, pendingPromotion: { from, to, options: promo } } : prev));
-      return;
-    }
-
-    tryApplyMove(candidates[0]);
-  }
-
-  function choosePromotion(move: Move) {
-    tryApplyMove(move);
-  }
-
   const noopSquareClick = (_: Square) => undefined;
   const noopMoveAttempt = (_from: Square, _to: Square, _cands: Move[]) => undefined;
 
-  const legalMoves = useMemo(() => {
-    if (!tryMove || tryMove.selectedSquare === null) return [];
-    return generateLegalMoves(tryMove.state, tryMove.selectedSquare);
-  }, [tryMove]);
+  const legalMoves = moveInput.legalMovesFromSelection;
+
+  useGlobalHotkeys(
+    [
+      { key: 'n', onKey: () => advance() },
+      { key: 'r', onKey: () => restart() },
+      { key: 'h', onKey: () => showHintAction() }
+    ],
+    [current]
+  );
 
   if (load.kind === 'loading') {
     return (
@@ -320,16 +289,7 @@ function tryApplyMove(move: Move) {
   const total = blocks.length;
 
   
-  useGlobalHotkeys(
-    [
-      { key: 'n', onKey: () => advance() },
-      { key: 'r', onKey: () => restart() },
-      { key: 'h', onKey: () => showHintAction() }
-    ],
-    [current]
-  );
-
-return (
+  return (
     <section className="stack">
       {noticeText && (
         <div className="toast" role="status" aria-live="polite">
@@ -404,23 +364,23 @@ return (
           <ChessBoard
             state={tryMove.state}
             orientation={orientation}
-            selectedSquare={tryMove.selectedSquare}
+            selectedSquare={moveInput.selectedSquare}
             legalMovesFromSelection={legalMoves}
             hintMove={tryMove.hintMove}
             showHintSquares={showHintSquares}
             showHintArrow={showHintArrow}
             lastMove={tryMove.lastMove}
-            onSquareClick={handleSquareClick}
-            onMoveAttempt={handleMoveAttempt}
-            disabled={false}
+            onSquareClick={moveInput.handleSquareClick}
+            onMoveAttempt={moveInput.handleMoveAttempt}
+            disabled={tryMove.solved || Boolean(pendingPromotion)}
           />
 
-          {tryMove.pendingPromotion && (
+          {pendingPromotion && (
             <PromotionChooser
               color={tryMove.state.sideToMove}
-              options={tryMove.pendingPromotion.options}
-              onChoose={choosePromotion}
-              onCancel={() => setTryMove((prev) => (prev ? { ...prev, pendingPromotion: null } : prev))}
+              options={pendingPromotion.options}
+              onChoose={moveInput.choosePromotion}
+              onCancel={moveInput.cancelPromotion}
             />
           )}
 

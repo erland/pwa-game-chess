@@ -1,16 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { GameState, Move, Square } from '../../domain/chessTypes';
-import { getPiece } from '../../domain/board';
-import { generateLegalMoves } from '../../domain/legalMoves';
-import { generatePseudoLegalMoves } from '../../domain/movegen';
+import { useMoveInput, type PendingPromotion as MoveInputPendingPromotion } from '../../ui/chessboard/useMoveInput';
 import type { GameAction } from '../../domain/reducer';
 
-export type PendingPromotion = {
-  from: Square;
-  to: Square;
-  options: Move[];
-};
+export type PendingPromotion = MoveInputPendingPromotion;
 
 export type ConfirmState =
   | { kind: 'resign'; title: string; message: string }
@@ -99,10 +93,20 @@ export function useGameInteractionController(args: {
 
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
 
-  const legalMovesFromSelection = useMemo(() => {
-    if (selectedSquare === null) return [];
-    return generateLegalMoves(state, selectedSquare);
-  }, [state, selectedSquare]);
+  const moveInput = useMoveInput({
+    state,
+    selectedSquare,
+    setSelectedSquare,
+    pendingPromotion,
+    setPendingPromotion,
+    // Additional constraints (AI thinking / confirm dialogs) are enforced by wrappers below.
+    disabled: false,
+    onMove: (move) => {
+      if (hint.isHintThinking || hint.hintMove || hint.hintText) clearHint();
+      commitMove(move);
+    },
+    showNotice
+  });
 
   // Close in-progress input dialogs if the game ends (mate/draw/resign).
   useEffect(() => {
@@ -115,25 +119,7 @@ export function useGameInteractionController(args: {
   }, [isGameOver, clearHint, clearNotice, setConfirm, setPendingPromotion]);
 
   function clearSelection() {
-    setSelectedSquare(null);
-  }
-
-  function tryApplyCandidates(from: Square, to: Square, candidates: Move[]) {
-    if (hint.isHintThinking || hint.hintMove || hint.hintText) clearHint();
-
-    // Promotions generate multiple legal moves for the same (from,to) with different piece types.
-    const promo = candidates.filter((m) => m.promotion);
-    if (promo.length > 0) {
-      // Let the user choose what to promote to.
-      setPendingPromotion({ from, to, options: promo });
-      return;
-    }
-
-    // Non-promotion: there should be exactly one legal candidate.
-    if (candidates.length > 0) {
-      commitMove(candidates[0]);
-      setSelectedSquare(null);
-    }
+    moveInput.clearSelection();
   }
 
   function handleSquareClick(square: Square) {
@@ -143,36 +129,7 @@ export function useGameInteractionController(args: {
     if (pendingPromotion) return;
     if (confirm) return;
 
-    const piece = getPiece(state.board, square);
-    const isOwnPiece = piece != null && piece.color === state.sideToMove;
-
-    if (selectedSquare === null) {
-      if (isOwnPiece) setSelectedSquare(square);
-      return;
-    }
-
-    // Toggle off selection.
-    if (square === selectedSquare) {
-      setSelectedSquare(null);
-      return;
-    }
-
-    // If click another own piece, switch selection.
-    if (isOwnPiece) {
-      setSelectedSquare(square);
-      return;
-    }
-
-    const from = selectedSquare;
-    const candidates = generateLegalMoves(state, from).filter((m) => m.to === square);
-
-    if (candidates.length === 0) {
-      const pseudo = generatePseudoLegalMoves(state, from).filter((m) => m.to === square);
-      showNotice(pseudo.length > 0 ? 'King would be in check' : 'Illegal move');
-      return;
-    }
-
-    tryApplyCandidates(from, square, candidates);
+    moveInput.handleSquareClick(square);
   }
 
   function handleMoveAttempt(from: Square, to: Square, candidates: Move[]) {
@@ -183,15 +140,7 @@ export function useGameInteractionController(args: {
     if (pendingPromotion) return;
     if (confirm) return;
 
-    // Drag-drop is allowed even if selection is out of sync.
-    if (candidates.length === 0) {
-      const pseudo = generatePseudoLegalMoves(state, from).filter((m) => m.to === to);
-      showNotice(pseudo.length > 0 ? 'King would be in check' : 'Illegal move');
-      setSelectedSquare(from);
-      return;
-    }
-
-    tryApplyCandidates(from, to, candidates);
+    moveInput.handleMoveAttempt(from, to, candidates);
   }
 
   function restart() {
@@ -247,21 +196,17 @@ export function useGameInteractionController(args: {
   }
 
   function choosePromotion(move: Move) {
-    clearHint();
-    commitMove(move);
-    setPendingPromotion(null);
-    setSelectedSquare(null);
+    moveInput.choosePromotion(move);
   }
 
   function cancelPromotion() {
-    setPendingPromotion(null);
-    // Keep selection so the user can try again.
+    moveInput.cancelPromotion();
   }
 
   return {
-    selectedSquare,
-    legalMovesFromSelection,
-    pendingPromotion,
+    selectedSquare: moveInput.selectedSquare,
+    legalMovesFromSelection: moveInput.legalMovesFromSelection,
+    pendingPromotion: moveInput.pendingPromotion,
     confirm,
 
     handleSquareClick,
