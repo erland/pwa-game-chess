@@ -94,7 +94,7 @@
         "king-safety"
       ],
       "position": {
-        "fen": "k3r3/8/8/8/8/8/8/4K2R w K - 0 1"
+        "fen": "k7/8/8/8/8/8/8/4K2R w K - 0 1"
       },
       "title": "Castling basics",
       "blocks": [
@@ -104,12 +104,12 @@
         },
         {
           "kind": "diagram",
-          "fen": "k3r3/8/8/8/8/8/8/4K2R w K - 0 1",
+          "fen": "k7/8/8/8/8/8/8/4K2R w K - 0 1",
           "caption": "Try castling"
         },
         {
           "kind": "tryMove",
-          "fen": "k3r3/8/8/8/8/8/8/4K2R w K - 0 1",
+          "fen": "k7/8/8/8/8/8/8/4K2R w K - 0 1",
           "prompt": "Castle king-side.",
           "expectedUci": "e1g1",
           "wrongBehavior": "hint",

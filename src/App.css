@@ -66,6 +66,56 @@ h1 {
   align-items: center;
 }
 
+/* Training navigation (mobile friendly)
+   - On small screens we replace the wide link row with an overlay menu.
+*/
+.trainingNavDesktop {
+  flex-wrap: wrap;
+}
+
+.btn.trainingNavMenuButton {
+  display: none;
+}
+
+@media (max-width: 520px) {
+  .trainingNavDesktop {
+    display: none;
+  }
+  .btn.trainingNavMenuButton {
+    display: inline-flex;
+  }
+}
+
+.trainingNavOverlayBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 16px;
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  overflow: auto;
+}
+
+.trainingNavOverlayPanel {
+  width: min(420px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(17, 24, 39, 0.98);
+}
+
+.trainingNavOverlayLinks {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.trainingNavOverlayLinks .navLink {
+  display: block;
+}
+
 .navLink {
   color: rgba(229, 231, 235, 0.88);
   text-decoration: none;

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { loadAllPacks, type PackLoadError } from '../domain/training/packLoader';
 import type { TrainingItemType, TrainingPack } from '../domain/training/schema';
 
@@ -46,32 +45,6 @@ export function TrainingHomePage() {
 
   return (
     <section className="stack">
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Choose a training mode</h3>
-        <p className="muted">
-          This is the foundation for tactics, openings, endgames, and lessons. The trainer pages will be implemented in
-          later steps.
-        </p>
-
-        <div className="actions">
-          <Link to="/training/tactics" className="btn btn-primary">
-            Tactics
-          </Link>
-          <Link to="/training/openings" className="btn btn-secondary">
-            Openings
-          </Link>
-          <Link to="/training/endgames" className="btn btn-secondary">
-            Endgames
-          </Link>
-          <Link to="/training/lessons" className="btn btn-secondary">
-            Lessons
-          </Link>
-          <Link to="/training/daily" className="btn btn-secondary">
-            Daily
-          </Link>
-        </div>
-      </div>
-
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Available training packs</h3>
 
