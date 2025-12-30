@@ -15,6 +15,7 @@ import type { TrainingItemKey } from '../../../domain/training/keys';
 import { makeItemKey, splitItemKey } from '../../../domain/training/keys';
 import type { TrainingPack } from '../../../domain/training/schema';
 import { buildEndgameRefs } from '../../../domain/training/endgameRefs';
+import { pickNextEndgame } from '../../../domain/training/pickers/endgamesPicker';
 
 import { useTrainingPacks } from '../hooks/useTrainingPacks';
 import { useTrainingItemStats } from '../hooks/useTrainingItemStats';
@@ -37,10 +38,8 @@ import type {
 } from '../../../domain/training/session/endgamesSession.types';
 
 import type { TrainingItemStats } from '../../../storage/training/trainingStore';
-import { recordAttempt } from '../../../storage/training/trainingStore';
 
-import type { TrainingMistakeRecord, TrainingSessionRecord } from '../../../storage/training/trainingSessionStore';
-import { addTrainingMistake, makeMistakeId, makeSessionId, saveTrainingSession } from '../../../storage/training/trainingSessionStore';
+import { persistEndgameFinish } from '../../../services/training/trainingProgressRepo';
 
 import { useMoveInput, type PendingPromotion } from '../../../ui/chessboard/useMoveInput';
 
@@ -108,38 +107,7 @@ function parseFocusKey(raw: string | null): TrainingItemKey | null {
   return null;
 }
 
-function pickNextEndgame(refs: EndgameRef[], stats: TrainingItemStats[], ts: number, focus: TrainingItemKey | null): EndgameRef | null {
-  if (refs.length === 0) return null;
-  if (focus) {
-    const f = refs.find((r) => r.key === focus);
-    if (f) return f;
-  }
-
-  const byKey = new Map<string, TrainingItemStats>();
-  for (const s of stats) byKey.set(s.key, s);
-
-  const due: EndgameRef[] = [];
-  const fresh: EndgameRef[] = [];
-  const seen: EndgameRef[] = [];
-
-  for (const r of refs) {
-    const st = byKey.get(r.key);
-    if (!st) {
-      fresh.push(r);
-      continue;
-    }
-    const nextDue = st.nextDueAtMs ?? 0;
-    if (nextDue > 0 && nextDue <= ts) due.push(r);
-    else seen.push(r);
-  }
-
-  const pick = (arr: EndgameRef[]) => arr[Math.floor((ts / 997) % arr.length)];
-  if (due.length) return pick(due);
-  if (fresh.length) return pick(fresh);
-  // fallback: least recently seen
-  seen.sort((a, b) => (byKey.get(a.key)?.lastSeenAtMs ?? 0) - (byKey.get(b.key)?.lastSeenAtMs ?? 0));
-  return seen[0] ?? refs[0];
-}
+// pickNextEndgame moved to domain/training/pickers/endgamesPicker.ts
 
 export function statusLabel(kind: string): string {
   switch (kind) {
@@ -340,65 +308,23 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
           hintAbortRef.current = null;
 
           void (async () => {
-            try {
-              const next = await recordAttempt({
-                packId: eff.packId,
-                itemId: eff.itemId,
-                success: eff.success,
-                solveMs: eff.solveMs,
-                nowMs: eff.endedAtMs
-              });
-              itemStats.upsert(next);
-            } catch {
-              // ignore
-            }
-
-            const sessionId = makeSessionId();
-            const avgCpLoss = eff.gradedMoves > 0 ? Math.round(eff.totalCpLoss / eff.gradedMoves) : 0;
-
-            const rec: TrainingSessionRecord = {
-              id: sessionId,
-              mode: 'endgames',
+            const { nextStats, sessionId } = await persistEndgameFinish({
+              key: eff.key,
+              packId: eff.packId,
+              itemId: eff.itemId,
+              fen: eff.fen,
+              success: eff.success,
+              solveMs: eff.solveMs,
               startedAtMs: eff.startedAtMs,
               endedAtMs: eff.endedAtMs,
-              attempted: 1,
-              correct: eff.success ? 1 : 0,
-              totalSolveMs: eff.solveMs,
-              avgSolveMs: eff.solveMs,
               totalCpLoss: eff.totalCpLoss,
-              avgCpLoss,
+              gradedMoves: eff.gradedMoves,
               gradeCounts: eff.gradeCounts,
-              packIds: [eff.packId]
-            };
+              playedLineUci: eff.playedLineUci,
+              message: eff.message
+            });
 
-            try {
-              await saveTrainingSession(rec);
-            } catch {
-              // ignore
-            }
-
-            if (!eff.success) {
-              const mistake: TrainingMistakeRecord = {
-                id: makeMistakeId(sessionId, eff.key, eff.endedAtMs),
-                sessionId,
-                itemKey: eff.key,
-                packId: eff.packId,
-                itemId: eff.itemId,
-                fen: eff.fen,
-                expectedLineUci: [],
-                playedLineUci: eff.playedLineUci,
-                solveMs: eff.solveMs,
-                createdAtMs: eff.endedAtMs,
-                message: eff.message
-              };
-
-              try {
-                await addTrainingMistake(mistake);
-              } catch {
-                // ignore
-              }
-            }
-
+            if (nextStats) itemStats.upsert(nextStats);
             dispatch({ type: 'SET_SESSION_ID', sessionId });
 
           })();

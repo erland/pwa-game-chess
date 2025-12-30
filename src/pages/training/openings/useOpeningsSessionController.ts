@@ -14,6 +14,7 @@ import { parseItemKey, type TrainingItemKey } from '../../../domain/training/key
 import { normalizeUci } from '../../../domain/training/openingsDrill';
 import { buildOpeningNodes, pickNextOpeningNode, type OpeningNodeRef } from '../../../domain/training/openingNodes';
 import { buildOpeningRefs } from '../../../domain/training/openingRefs';
+import { pickNextOpening } from '../../../domain/training/pickers/openingsPicker';
 
 import { useTrainingPacks } from '../hooks/useTrainingPacks';
 import { useTrainingItemStats } from '../hooks/useTrainingItemStats';
@@ -36,52 +37,16 @@ import type {
   OpeningsSessionState
 } from '../../../domain/training/session/openingsSession.types';
 
-import { recordAttempt, type TrainingItemStats } from '../../../storage/training/trainingStore';
-import { recordOpeningNodeAttempt, type OpeningNodeStats } from '../../../storage/training/openingNodeStore';
+import type { TrainingItemStats } from '../../../storage/training/trainingStore';
+import type { OpeningNodeStats } from '../../../storage/training/openingNodeStore';
+
+import {
+  recordOpeningNodeAttemptProgress,
+  recordTrainingItemAttempt
+} from '../../../services/training/trainingProgressRepo';
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error';
 export type { DrillMode, OpeningRef };
-
-function pickNextOpening(
-  refs: OpeningRef[],
-  stats: TrainingItemStats[],
-  ts: number,
-  focusKey?: TrainingItemKey | null
-): OpeningRef | null {
-  if (refs.length === 0) return null;
-
-  if (focusKey) {
-    const f = refs.find((r) => r.key === focusKey);
-    if (f) return f;
-  }
-
-  const byKey = new Map<string, TrainingItemStats>();
-  for (const s of stats) byKey.set(s.key, s);
-
-  const due: OpeningRef[] = [];
-  const fresh: OpeningRef[] = [];
-  const seen: OpeningRef[] = [];
-
-  for (const r of refs) {
-    const s = byKey.get(r.key);
-    if (!s || (s.attempts || 0) === 0) fresh.push(r);
-    else if ((s.nextDueAtMs || 0) <= ts) due.push(r);
-    else seen.push(r);
-  }
-
-  // deterministic ordering
-  const byKeyAsc = (a: OpeningRef, b: OpeningRef) => a.key.localeCompare(b.key);
-  due.sort(byKeyAsc);
-  fresh.sort(byKeyAsc);
-  seen.sort((a, b) => {
-    const sa = byKey.get(a.key)?.lastSeenAtMs || 0;
-    const sb = byKey.get(b.key)?.lastSeenAtMs || 0;
-    if (sa !== sb) return sa - sb; // least recently seen first
-    return a.key.localeCompare(b.key);
-  });
-
-  return due[0] ?? fresh[0] ?? seen[0] ?? null;
-}
 
 export type UseOpeningsSessionControllerArgs = {
   focusKey?: string | null;
@@ -292,7 +257,7 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
         case 'RECORD_LINE_ATTEMPT': {
           void (async () => {
             try {
-              const nextStats = await recordAttempt({
+              const nextStats = await recordTrainingItemAttempt({
                 packId: eff.packId,
                 itemId: eff.itemId,
                 success: eff.success,
@@ -309,7 +274,7 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
         case 'RECORD_NODE_ATTEMPT': {
           void (async () => {
             try {
-              const nextStats = await recordOpeningNodeAttempt({
+              const nextStats = await recordOpeningNodeAttemptProgress({
                 key: eff.key,
                 packId: eff.packId,
                 itemId: eff.itemId,

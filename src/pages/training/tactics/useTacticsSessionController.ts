@@ -11,9 +11,10 @@ import type { CoachAnalysis, CoachMoveGrade, ProgressiveHintLevel } from '../../
 import { createStrongSearchCoach } from '../../../domain/coach/strongSearchCoach';
 
 import type { TrainingPack } from '../../../domain/training/schema';
-import { makeItemKey, type TrainingItemKey } from '../../../domain/training/keys';
+import { makeItemKey } from '../../../domain/training/keys';
 import { normalizeUci } from '../../../domain/training/tactics';
 import { buildTacticRefs } from '../../../domain/training/tacticRefs';
+import { pickNextTactic } from '../../../domain/training/pickers/tacticsPicker';
 
 import { useTrainingPacks } from '../hooks/useTrainingPacks';
 import { useTrainingItemStats } from '../hooks/useTrainingItemStats';
@@ -34,15 +35,17 @@ import type {
   TacticsAttemptState
 } from '../../../domain/training/session/tacticsSession.types';
 
-import { recordAttempt, type TrainingItemStats } from '../../../storage/training/trainingStore';
 import type { TrainingMistakeRecord, TrainingSessionRecord } from '../../../storage/training/trainingSessionStore';
 import {
-  addTrainingMistake,
   listTrainingMistakes,
   makeMistakeId,
-  makeSessionId,
-  saveTrainingSession
+  makeSessionId
 } from '../../../storage/training/trainingSessionStore';
+
+import {
+  recordTrainingItemAttempt,
+  saveSessionWithMistakes
+} from '../../../services/training/trainingProgressRepo';
 
 import { useToastNotice } from '../../game/useToastNotice';
 import { useMoveInput, type PendingPromotion } from '../../../ui/chessboard/useMoveInput';
@@ -112,51 +115,7 @@ function nowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
-function pickNextTactic(refs: TacticRef[], stats: TrainingItemStats[], ts: number): TacticRef | null {
-  if (refs.length === 0) return null;
-
-  const byKey = new Map<TrainingItemKey, TrainingItemStats>();
-  for (const s of stats) byKey.set(s.key, s);
-
-  // Prefer due items (or new items).
-  const due: Array<{ ref: TacticRef; s: TrainingItemStats | null }> = [];
-  for (const ref of refs) {
-    const key = makeItemKey(ref.pack.id, ref.item.itemId);
-    const s = byKey.get(key) ?? null;
-    if (!s || (s.nextDueAtMs || 0) <= ts) {
-      due.push({ ref, s });
-    }
-  }
-
-  if (due.length > 0) {
-    due.sort((a, b) => {
-      const ad = a.s ? a.s.nextDueAtMs : 0;
-      const bd = b.s ? b.s.nextDueAtMs : 0;
-      if (ad !== bd) return ad - bd;
-      const aa = a.s ? a.s.attempts : 0;
-      const ba = b.s ? b.s.attempts : 0;
-      if (aa !== ba) return aa - ba;
-      return makeItemKey(a.ref.pack.id, a.ref.item.itemId).localeCompare(makeItemKey(b.ref.pack.id, b.ref.item.itemId));
-    });
-    return due[0].ref;
-  }
-
-  // Otherwise, pick the least-attempted item.
-  const scored = refs
-    .map((ref) => {
-      const key = makeItemKey(ref.pack.id, ref.item.itemId);
-      const s = byKey.get(key);
-      return { ref, attempts: s?.attempts ?? 0, updated: s?.updatedAtMs ?? 0 };
-    })
-    .sort(
-      (a, b) =>
-        (a.attempts - b.attempts) ||
-        (a.updated - b.updated) ||
-        makeItemKey(a.ref.pack.id, a.ref.item.itemId).localeCompare(makeItemKey(b.ref.pack.id, b.ref.item.itemId))
-    );
-
-  return scored[0]?.ref ?? null;
-}
+// pickNextTactic moved to domain/training/pickers/tacticsPicker.ts
 
 export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTacticsSessionControllerArgs): UseTacticsSessionControllerResult {
   const navigate = useNavigate();
@@ -292,7 +251,7 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
         case 'RECORD_ATTEMPT': {
           void (async () => {
             try {
-              const next = await recordAttempt({
+              const next = await recordTrainingItemAttempt({
                 packId: eff.packId,
                 itemId: eff.itemId,
                 success: eff.success,
@@ -541,10 +500,7 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     };
 
     try {
-      await saveTrainingSession(record);
-      for (const m of run.mistakes) {
-        await addTrainingMistake(m);
-      }
+      await saveSessionWithMistakes(record, run.mistakes);
       setRun(null);
     } catch {
       showNotice('Failed to save session');
