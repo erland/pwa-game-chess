@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useSessionEffectRunner } from '../useSessionEffectRunner';
 
 import { useGlobalHotkeys } from '../../../ui/useGlobalHotkeys';
 import { useToastNotice } from '../../game/useToastNotice';
@@ -332,12 +333,8 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
   }, [pendingPromotion, expectedUci]);
 
   // Effect runner for reducer effects (record attempts).
-  useEffect(() => {
-    const pending = effectsRef.current;
-    if (pending.length === 0) return;
-    effectsRef.current = [];
-
-    for (const eff of pending) {
+  const runEffect = useCallback(
+    (eff: OpeningsSessionEffect) => {
       switch (eff.kind) {
         case 'RECORD_LINE_ATTEMPT': {
           void (async () => {
@@ -386,8 +383,12 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
           break;
         }
       }
-    }
-  }, [session, dispatch]);
+    },
+    [dispatch]
+  );
+
+  useSessionEffectRunner(effectsRef, runEffect, [session]);
+
 
   const resetToInitial = useCallback(() => {
     clearNotice();

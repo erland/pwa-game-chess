@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSessionEffectRunner } from '../useSessionEffectRunner';
 
 import { useGlobalHotkeys } from '../../../ui/useGlobalHotkeys';
 
@@ -268,12 +269,8 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
   }, []);
 
   // Effect runner for reducer effects.
-  useEffect(() => {
-    const pending = effectsRef.current;
-    if (pending.length === 0) return;
-    effectsRef.current = [];
-
-    for (const eff of pending) {
+  const runEffect = useCallback(
+    (eff: EndgamesSessionEffect) => {
       switch (eff.kind) {
         case 'GRADE_MOVE': {
           gradeAbortRef.current?.abort();
@@ -436,8 +433,12 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
           break;
         }
       }
-    }
-  }, [sessionState, dispatch]);
+    },
+    [dispatch]
+  );
+
+  useSessionEffectRunner(effectsRef, runEffect, [sessionState]);
+
 
   const startEndgame = useCallback(
     async (ref?: EndgameRef | null) => {

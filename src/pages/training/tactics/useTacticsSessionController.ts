@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSessionEffectRunner } from '../useSessionEffectRunner';
 
 import { useGlobalHotkeys } from '../../../ui/useGlobalHotkeys';
 import type { Move, Square } from '../../../domain/chessTypes';
@@ -317,12 +318,8 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
   }, [reviewSessionId, focusKey, solve]);
 
   // Effect runner for reducer effects.
-  useEffect(() => {
-    const pending = effectsRef.current;
-    if (pending.length === 0) return;
-    effectsRef.current = [];
-
-    for (const eff of pending) {
+  const runEffect = useCallback(
+    (eff: TacticsAttemptEffect) => {
       switch (eff.kind) {
         case 'RECORD_ATTEMPT': {
           void (async () => {
@@ -376,8 +373,12 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
           break;
         }
       }
-    }
-  }, [session, coach, coachConfig, dispatch]);
+    },
+    [coach, coachConfig, dispatch]
+  );
+
+  useSessionEffectRunner(effectsRef, runEffect, [session]);
+
 
   const startSession = useCallback(
     (ref: TacticRef) => {
