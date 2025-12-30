@@ -10,11 +10,14 @@ import type { Orientation } from '../../../domain/localSetup';
 import { createInitialGameState } from '../../../domain/gameState';
 import { moveToUci } from '../../../domain/notation/uci';
 
-import { loadAllPacks } from '../../../domain/training/packLoader';
-import type { OpeningLineItem, TrainingPack } from '../../../domain/training/schema';
 import { parseItemKey, type TrainingItemKey } from '../../../domain/training/keys';
-import { isUciLike, normalizeUci } from '../../../domain/training/openingsDrill';
+import { normalizeUci } from '../../../domain/training/openingsDrill';
 import { buildOpeningNodes, pickNextOpeningNode, type OpeningNodeRef } from '../../../domain/training/openingNodes';
+import { buildOpeningRefs } from '../../../domain/training/openingRefs';
+
+import { useTrainingPacks } from '../hooks/useTrainingPacks';
+import { useTrainingItemStats } from '../hooks/useTrainingItemStats';
+import { useOpeningNodeStats } from '../hooks/useOpeningNodeStats';
 
 import {
   createOpeningsSessionState,
@@ -33,8 +36,8 @@ import type {
   OpeningsSessionState
 } from '../../../domain/training/session/openingsSession.types';
 
-import { listItemStats, recordAttempt, type TrainingItemStats } from '../../../storage/training/trainingStore';
-import { listOpeningNodeStats, recordOpeningNodeAttempt, type OpeningNodeStats } from '../../../storage/training/openingNodeStore';
+import { recordAttempt, type TrainingItemStats } from '../../../storage/training/trainingStore';
+import { recordOpeningNodeAttempt, type OpeningNodeStats } from '../../../storage/training/openingNodeStore';
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error';
 export type { DrillMode, OpeningRef };
@@ -78,47 +81,6 @@ function pickNextOpening(
   });
 
   return due[0] ?? fresh[0] ?? seen[0] ?? null;
-}
-
-function buildOpeningRefs(packs: TrainingPack[]): { refs: OpeningRef[]; warnings: string[] } {
-  const refs: OpeningRef[] = [];
-  const warnings: string[] = [];
-
-  for (const p of packs) {
-    for (const it of p.items) {
-      if (it.type !== 'openingLine') continue;
-      const item = it as OpeningLineItem;
-
-      // v1: item.line is intended to be UCI (SAN could be supported later)
-      const rawMoves = item.line ?? [];
-      const lineUci: string[] = [];
-      const bad: string[] = [];
-
-      for (const m of rawMoves) {
-        if (isUciLike(m)) lineUci.push(normalizeUci(m));
-        else bad.push(String(m));
-      }
-
-      if (lineUci.length === 0) {
-        warnings.push(`Opening line ${p.id}:${item.itemId} has no UCI moves (line is empty or contains non-UCI moves).`);
-        continue;
-      }
-      if (bad.length > 0) {
-        warnings.push(`Opening line ${p.id}:${item.itemId} ignored non-UCI moves: ${bad.join(', ')}`);
-      }
-
-      refs.push({
-        key: `${p.id}:${item.itemId}`,
-        packId: p.id,
-        packTitle: p.title,
-        item,
-        lineUci
-      });
-    }
-  }
-
-  refs.sort((a, b) => a.key.localeCompare(b.key));
-  return { refs, warnings };
 }
 
 export type UseOpeningsSessionControllerArgs = {
@@ -183,13 +145,41 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
 
   const focusKey = useMemo(() => (focusKeyRaw ? parseItemKey(focusKeyRaw) : null), [focusKeyRaw]);
 
-  const [status, setStatus] = useState<Status>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const [packWarnings, setPackWarnings] = useState<string[]>([]);
+  const packs = useTrainingPacks();
+  const itemStats = useTrainingItemStats(packs.state.status);
+  const nodeStatsHook = useOpeningNodeStats(packs.state.status);
 
-  const [refs, setRefs] = useState<OpeningRef[]>([]);
-  const [stats, setStats] = useState<TrainingItemStats[]>([]);
-  const [nodeStats, setNodeStats] = useState<OpeningNodeStats[]>([]);
+  const refsRes = useMemo(() => {
+    if (packs.state.status !== 'ready') return { refs: [] as OpeningRef[], warnings: [] as string[] };
+    return buildOpeningRefs(packs.state.packs);
+  }, [packs.state]);
+
+  const refs = refsRes.refs;
+
+  const packWarnings = useMemo(() => {
+    const loadErrors = packs.state.status === 'ready' ? packs.state.errors : [];
+    return [...loadErrors, ...refsRes.warnings];
+  }, [packs.state, refsRes.warnings]);
+
+  const stats = itemStats.state.status === 'ready' ? itemStats.state.stats : [];
+  const nodeStats = nodeStatsHook.state.status === 'ready' ? nodeStatsHook.state.stats : [];
+
+  const status: Status = useMemo(() => {
+    const anyLoading =
+      packs.state.status === 'loading' || itemStats.state.status === 'loading' || nodeStatsHook.state.status === 'loading';
+    if (anyLoading) return 'loading';
+    const anyError =
+      packs.state.status === 'error' || itemStats.state.status === 'error' || nodeStatsHook.state.status === 'error';
+    if (anyError) return 'error';
+    return 'ready';
+  }, [packs.state.status, itemStats.state.status, nodeStatsHook.state.status]);
+
+  const error: string | null = useMemo(() => {
+    if (packs.state.status === 'error') return packs.state.message;
+    if (itemStats.state.status === 'error') return itemStats.state.message;
+    if (nodeStatsHook.state.status === 'error') return nodeStatsHook.state.message;
+    return null;
+  }, [packs.state, itemStats.state, nodeStatsHook.state]);
 
   const effectsRef = useRef<OpeningsSessionEffect[]>([]);
   const reducer = useCallback(
@@ -220,45 +210,8 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
   const { noticeText, showNotice, clearNotice } = useToastNotice(1500);
 
 
-  useEffect(() => {
-    let alive = true;
-    setStatus('loading');
-    setError(null);
-
-    Promise.all([loadAllPacks(), listItemStats(), listOpeningNodeStats()])
-      .then(([packsRes, statsRes, nodeStatsRes]) => {
-        if (!alive) return;
-
-        const br = buildOpeningRefs(packsRes.packs);
-        setRefs(br.refs);
-        setPackWarnings(br.warnings);
-        setStats(statsRes);
-        setNodeStats(nodeStatsRes);
-
-        setStatus('ready');
-      })
-      .catch((e) => {
-        if (!alive) return;
-        setError((e as Error).message);
-        setStatus('error');
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const byKeyStats = useMemo(() => {
-    const m = new Map<string, TrainingItemStats>();
-    for (const s of stats) m.set(s.key, s);
-    return m;
-  }, [stats]);
-
-  const byKeyNodeStats = useMemo(() => {
-    const m = new Map<string, OpeningNodeStats>();
-    for (const s of nodeStats) m.set(s.key, s);
-    return m;
-  }, [nodeStats]);
+  const byKeyStats = itemStats.byKey;
+  const byKeyNodeStats = nodeStatsHook.byKey;
 
   const learnedNodeCount = useMemo(
     () => nodeStats.filter((s) => (s.attempts || 0) > 0).length,
@@ -345,12 +298,7 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
                 success: eff.success,
                 solveMs: eff.solveMs
               });
-              setStats((prev) => {
-                const out = prev.filter((s) => s.key !== nextStats.key);
-                out.push(nextStats);
-                out.sort((a, b) => a.key.localeCompare(b.key));
-                return out;
-              });
+              itemStats.upsert(nextStats);
             } catch {
               // ignore
             }
@@ -369,13 +317,7 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
                 success: eff.success,
                 solveMs: eff.solveMs
               });
-
-              setNodeStats((prev) => {
-                const out = prev.filter((s) => s.key !== nextStats.key);
-                out.push(nextStats);
-                out.sort((a, b) => a.key.localeCompare(b.key));
-                return out;
-              });
+              nodeStatsHook.upsert(nextStats);
             } catch {
               // ignore
             }
@@ -384,7 +326,7 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
         }
       }
     },
-    [dispatch]
+    [itemStats, nodeStatsHook]
   );
 
   useSessionEffectRunner(effectsRef, runEffect, [session]);

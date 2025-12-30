@@ -13,8 +13,11 @@ import type { Coach, CoachAnalysis, CoachMoveGrade, ProgressiveHintLevel } from 
 
 import type { TrainingItemKey } from '../../../domain/training/keys';
 import { makeItemKey, splitItemKey } from '../../../domain/training/keys';
-import type { EndgameItem, TrainingPack } from '../../../domain/training/schema';
-import { loadAllPacks } from '../../../domain/training/packLoader';
+import type { TrainingPack } from '../../../domain/training/schema';
+import { buildEndgameRefs } from '../../../domain/training/endgameRefs';
+
+import { useTrainingPacks } from '../hooks/useTrainingPacks';
+import { useTrainingItemStats } from '../hooks/useTrainingItemStats';
 
 import {
   createEndgamesSessionState,
@@ -34,7 +37,7 @@ import type {
 } from '../../../domain/training/session/endgamesSession.types';
 
 import type { TrainingItemStats } from '../../../storage/training/trainingStore';
-import { listItemStats, recordAttempt } from '../../../storage/training/trainingStore';
+import { recordAttempt } from '../../../storage/training/trainingStore';
 
 import type { TrainingMistakeRecord, TrainingSessionRecord } from '../../../storage/training/trainingSessionStore';
 import { addTrainingMistake, makeMistakeId, makeSessionId, saveTrainingSession } from '../../../storage/training/trainingSessionStore';
@@ -154,9 +157,23 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
 
   const focus = useMemo(() => parseFocusKey(focusKey), [focusKey]);
 
-  const [solve, setSolve] = useState<SolveState>({ kind: 'idle' });
-  const [packs, setPacks] = useState<TrainingPack[]>([]);
-  const [stats, setStats] = useState<TrainingItemStats[]>([]);
+  const [fenError, setFenError] = useState<string | null>(null);
+  const packs = useTrainingPacks();
+  const solve: SolveState = useMemo(() => {
+    if (fenError) return { kind: 'error', message: fenError };
+    switch (packs.state.status) {
+      case 'loading':
+        return { kind: 'loading' };
+      case 'error':
+        return { kind: 'error', message: packs.state.message };
+      case 'ready':
+        return { kind: 'ready', packs: packs.state.packs };
+      default:
+        return { kind: 'loading' };
+    }
+  }, [packs.state, fenError]);
+
+  const packList = packs.state.status === 'ready' ? packs.state.packs : [];
 
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
@@ -182,52 +199,11 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
 
   const [sessionState, dispatch] = useReducer(reducer, createEndgamesSessionState());
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      setSolve({ kind: 'loading' });
-      try {
-        const [p, s] = await Promise.all([loadAllPacks(), listItemStats()]);
-        if (!mounted) return;
-        setPacks(p.packs);
-        setStats(s);
-        setSolve({ kind: 'ready', packs: p.packs });
-      } catch (e: any) {
-        if (!mounted) return;
-        setSolve({ kind: 'error', message: String(e?.message ?? e) });
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const itemStats = useTrainingItemStats(sessionState.result ? 1 : 0);
+  const stats = itemStats.state.status === 'ready' ? itemStats.state.stats : [];
+  const byKeyStats = itemStats.byKey;
 
-  const endgameRefs = useMemo<EndgameRef[]>(() => {
-    const out: EndgameRef[] = [];
-    for (const p of packs) {
-      for (const it of p.items) {
-        if (it.type !== 'endgame') continue;
-        const eg = it as EndgameItem;
-        out.push({
-          key: makeItemKey(p.id, eg.itemId),
-          packId: p.id,
-          itemId: eg.itemId,
-          difficulty: eg.difficulty,
-          fen: eg.position.fen,
-          goalText: eg.goal,
-          themes: eg.themes
-        });
-      }
-    }
-    out.sort((a, b) => (a.packId + ':' + a.itemId).localeCompare(b.packId + ':' + b.itemId));
-    return out;
-  }, [packs]);
-
-  const byKeyStats = useMemo(() => {
-    const m = new Map<string, TrainingItemStats>();
-    for (const s of stats) m.set(s.key, s);
-    return m;
-  }, [stats]);
+  const endgameRefs = useMemo<EndgameRef[]>(() => buildEndgameRefs(packList), [packList]);
 
   const session: EndgameSession | null =
     sessionState.ref && sessionState.state && sessionState.baseState ? (sessionState as unknown as EndgameSession) : null;
@@ -365,13 +341,14 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
 
           void (async () => {
             try {
-              await recordAttempt({
+              const next = await recordAttempt({
                 packId: eff.packId,
                 itemId: eff.itemId,
                 success: eff.success,
                 solveMs: eff.solveMs,
                 nowMs: eff.endedAtMs
               });
+              itemStats.upsert(next);
             } catch {
               // ignore
             }
@@ -424,17 +401,12 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
 
             dispatch({ type: 'SET_SESSION_ID', sessionId });
 
-            try {
-              setStats(await listItemStats());
-            } catch {
-              // ignore
-            }
           })();
           break;
         }
       }
     },
-    [dispatch]
+    [dispatch, itemStats]
   );
 
   useSessionEffectRunner(effectsRef, runEffect, [sessionState]);
@@ -448,9 +420,11 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
 
       const parsed = tryParseFEN(chosen.fen);
       if (!parsed.ok) {
-        setSolve({ kind: 'error', message: `Invalid FEN for ${chosen.packId}:${chosen.itemId}: ${parsed.error}` });
+        setFenError(`Invalid FEN for ${chosen.packId}:${chosen.itemId}: ${parsed.error}`);
         return;
       }
+
+      setFenError(null);
 
       setSelectedSquare(null);
       setPendingPromotion(null);

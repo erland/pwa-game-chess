@@ -10,10 +10,13 @@ import { createInitialGameState } from '../../../domain/gameState';
 import type { CoachAnalysis, CoachMoveGrade, ProgressiveHintLevel } from '../../../domain/coach/types';
 import { createStrongSearchCoach } from '../../../domain/coach/strongSearchCoach';
 
-import type { TacticItem, TrainingPack } from '../../../domain/training/schema';
-import { loadAllPacks } from '../../../domain/training/packLoader';
+import type { TrainingPack } from '../../../domain/training/schema';
 import { makeItemKey, type TrainingItemKey } from '../../../domain/training/keys';
 import { normalizeUci } from '../../../domain/training/tactics';
+import { buildTacticRefs } from '../../../domain/training/tacticRefs';
+
+import { useTrainingPacks } from '../hooks/useTrainingPacks';
+import { useTrainingItemStats } from '../hooks/useTrainingItemStats';
 
 import {
   reduceTacticsAttempt
@@ -31,7 +34,7 @@ import type {
   TacticsAttemptState
 } from '../../../domain/training/session/tacticsSession.types';
 
-import { listItemStats, recordAttempt, type TrainingItemStats } from '../../../storage/training/trainingStore';
+import { recordAttempt, type TrainingItemStats } from '../../../storage/training/trainingStore';
 import type { TrainingMistakeRecord, TrainingSessionRecord } from '../../../storage/training/trainingSessionStore';
 import {
   addTrainingMistake,
@@ -109,10 +112,6 @@ function nowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
-function isTactic(it: any): it is TacticItem {
-  return it && typeof it === 'object' && it.type === 'tactic' && Array.isArray(it.solutions);
-}
-
 function pickNextTactic(refs: TacticRef[], stats: TrainingItemStats[], ts: number): TacticRef | null {
   if (refs.length === 0) return null;
 
@@ -162,8 +161,19 @@ function pickNextTactic(refs: TacticRef[], stats: TrainingItemStats[], ts: numbe
 export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTacticsSessionControllerArgs): UseTacticsSessionControllerResult {
   const navigate = useNavigate();
 
-  const [solve, setSolve] = useState<SolveState>({ kind: 'idle' });
-  const [stats, setStats] = useState<TrainingItemStats[]>([]);
+  const packs = useTrainingPacks();
+  const solve: SolveState = useMemo(() => {
+    switch (packs.state.status) {
+      case 'loading':
+        return { kind: 'loading' };
+      case 'error':
+        return { kind: 'error', message: packs.state.message };
+      case 'ready':
+        return { kind: 'ready', packs: packs.state.packs, errors: packs.state.errors };
+      default:
+        return { kind: 'loading' };
+    }
+  }, [packs.state]);
 
   const [run, setRun] = useState<RunState | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
@@ -201,25 +211,8 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     analysisAbortRef.current = null;
   }, []);
 
-  // Load training packs.
-  useEffect(() => {
-    let mounted = true;
-    setSolve({ kind: 'loading' });
-    void (async () => {
-      try {
-        const res = await loadAllPacks();
-        if (!mounted) return;
-        setSolve({ kind: 'ready', packs: res.packs, errors: res.errors.map((e) => e.message) });
-      } catch (e) {
-        if (!mounted) return;
-        setSolve({ kind: 'error', message: (e as Error).message });
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const itemStats = useTrainingItemStats(session?.result ? 1 : 0);
+  const stats = itemStats.state.status === 'ready' ? itemStats.state.stats : [];
 
   // Ensure any in-flight coach analysis is cancelled on unmount.
   useEffect(() => {
@@ -231,32 +224,9 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     };
   }, []);
 
-  // Reload item stats periodically (and after a puzzle ends).
-  useEffect(() => {
-    let mounted = true;
-    void (async () => {
-      try {
-        const all = await listItemStats();
-        if (mounted) setStats(all);
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [session?.result ? 1 : 0]);
-
   const tacticRefs: TacticRef[] = useMemo(() => {
     if (solve.kind !== 'ready') return [];
-    const out: TacticRef[] = [];
-    for (const p of solve.packs) {
-      for (const it of p.items) {
-        if (isTactic(it)) out.push({ pack: p, item: it });
-      }
-    }
-    out.sort((a, b) => a.pack.title.localeCompare(b.pack.title) || a.item.itemId.localeCompare(b.item.itemId));
-    return out;
+    return buildTacticRefs(solve.packs);
   }, [solve]);
 
   // If a review session id is provided, load its mistakes and build a deterministic queue.
@@ -276,16 +246,14 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
         if (!mounted) return;
         setReviewMistakes(mistakes);
 
-        const byPack = new Map<string, TrainingPack>();
-        for (const p of solve.packs) byPack.set(p.id, p);
+        const byKey = new Map<string, TacticRef>();
+        for (const r of tacticRefs) byKey.set(makeItemKey(r.pack.id, r.item.itemId), r);
 
         const refs: TacticRef[] = [];
         for (const m of mistakes) {
-          const pack = byPack.get(m.packId);
-          if (!pack) continue;
-          const item = pack.items.find((it) => isTactic(it) && it.itemId === m.itemId) as TacticItem | undefined;
-          if (!item) continue;
-          refs.push({ pack, item });
+          const key = makeItemKey(m.packId, m.itemId);
+          const ref = byKey.get(key);
+          if (ref) refs.push(ref);
         }
 
         // Optional focus: bring that specific mistake to the front.
@@ -315,7 +283,7 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     return () => {
       mounted = false;
     };
-  }, [reviewSessionId, focusKey, solve]);
+  }, [reviewSessionId, focusKey, solve, tacticRefs]);
 
   // Effect runner for reducer effects.
   const runEffect = useCallback(
@@ -324,12 +292,13 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
         case 'RECORD_ATTEMPT': {
           void (async () => {
             try {
-              await recordAttempt({
+              const next = await recordAttempt({
                 packId: eff.packId,
                 itemId: eff.itemId,
                 success: eff.success,
                 solveMs: eff.solveMs
               });
+              itemStats.upsert(next);
             } catch {
               // ignore
             }
@@ -374,7 +343,7 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
         }
       }
     },
-    [coach, coachConfig, dispatch]
+    [coach, coachConfig, dispatch, itemStats]
   );
 
   useSessionEffectRunner(effectsRef, runEffect, [session]);
