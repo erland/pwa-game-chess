@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import { useGlobalHotkeys } from '../../../ui/useGlobalHotkeys';
 import { useToastNotice } from '../../game/useToastNotice';
@@ -6,35 +6,37 @@ import { useMoveInput, type PendingPromotion } from '../../../ui/chessboard/useM
 
 import type { Color, GameState, Move, Square } from '../../../domain/chessTypes';
 import type { Orientation } from '../../../domain/localSetup';
-import { applyMove } from '../../../domain/applyMove';
 import { createInitialGameState } from '../../../domain/gameState';
-import { tryParseFEN } from '../../../domain/notation/fen';
 import { moveToUci } from '../../../domain/notation/uci';
 
 import { loadAllPacks } from '../../../domain/training/packLoader';
 import type { OpeningLineItem, TrainingPack } from '../../../domain/training/schema';
 import { parseItemKey, type TrainingItemKey } from '../../../domain/training/keys';
-import {
-  autoPlayOpponentReplies,
-  isUciLike,
-  normalizeUci,
-  uciToLegalMove
-} from '../../../domain/training/openingsDrill';
+import { isUciLike, normalizeUci } from '../../../domain/training/openingsDrill';
 import { buildOpeningNodes, pickNextOpeningNode, type OpeningNodeRef } from '../../../domain/training/openingNodes';
+
+import {
+  createOpeningsSessionState,
+  reduceOpeningsSession
+} from '../../../domain/training/session/openingsSession';
+import {
+  selectOpeningsDisabledForMoveInput,
+  selectOpeningsExpectedUci,
+  selectOpeningsHintMove
+} from '../../../domain/training/session/openingsSession.selectors';
+import type {
+  DrillMode,
+  OpeningRef,
+  OpeningsSessionAction,
+  OpeningsSessionEffect,
+  OpeningsSessionState
+} from '../../../domain/training/session/openingsSession.types';
 
 import { listItemStats, recordAttempt, type TrainingItemStats } from '../../../storage/training/trainingStore';
 import { listOpeningNodeStats, recordOpeningNodeAttempt, type OpeningNodeStats } from '../../../storage/training/openingNodeStore';
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error';
-export type DrillMode = 'nodes' | 'line';
-
-export type OpeningRef = {
-  key: TrainingItemKey;
-  packId: string;
-  packTitle: string;
-  item: OpeningLineItem;
-  lineUci: string[];
-};
+export type { DrillMode, OpeningRef };
 
 function pickNextOpening(
   refs: OpeningRef[],
@@ -188,25 +190,34 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
   const [stats, setStats] = useState<TrainingItemStats[]>([]);
   const [nodeStats, setNodeStats] = useState<OpeningNodeStats[]>([]);
 
-  const [drillColor, setDrillColor] = useState<Color>('w');
-  const [mode, setModeState] = useState<DrillMode>('nodes');
+  const effectsRef = useRef<OpeningsSessionEffect[]>([]);
+  const reducer = useCallback(
+    (prev: OpeningsSessionState, action: OpeningsSessionAction): OpeningsSessionState => {
+      const res = reduceOpeningsSession(prev, action);
+      if (res.effects.length > 0) effectsRef.current.push(...res.effects);
+      return res.state;
+    },
+    []
+  );
 
-  const [current, setCurrent] = useState<OpeningRef | null>(null);
-  const [currentNode, setCurrentNode] = useState<OpeningNodeRef | null>(null);
-  const [initialFen, setInitialFen] = useState<string | null>(null);
-  const [state, setState] = useState<GameState | null>(null);
-  const [index, setIndex] = useState<number>(0);
+  const [session, dispatch] = useReducer(reducer, createOpeningsSessionState());
 
-  const [running, setRunning] = useState<boolean>(false);
-  const [resultMsg, setResultMsg] = useState<string | null>(null);
-  const [showHintFlag, setShowHintFlag] = useState<boolean>(false);
+  const drillColor = session.drillColor;
+  const mode = session.mode;
+  const current = session.current;
+  const currentNode = session.currentNode;
+  const initialFen = session.initialFen;
+  const state = session.state;
+  const index = session.index;
+  const running = session.running;
+  const resultMsg = session.resultMsg;
+  const showHintFlag = session.showHintFlag;
 
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
 
   const { noticeText, showNotice, clearNotice } = useToastNotice(1500);
 
-  const startedAtRef = useRef<number>(0);
 
   useEffect(() => {
     let alive = true;
@@ -280,169 +291,21 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
   const openingNodes = openingNodesMemo.nodes;
   const openingNodesWarnings = openingNodesMemo.warnings;
 
-  const expectedUci = useMemo(() => {
-    if (mode === 'nodes') return currentNode?.expectedUci ?? null;
-    if (!current) return null;
-    return current.lineUci[index] ?? null;
-  }, [mode, currentNode, current, index]);
-
-  const expectedMove = useMemo(() => {
-    if (!state || !expectedUci) return null;
-    if (state.sideToMove !== drillColor) return null;
-    return uciToLegalMove(state, expectedUci);
-  }, [state, expectedUci, drillColor]);
-
-  const hintMove = useMemo(() => {
-    if (!showHintFlag || !expectedMove) return null;
-    return { from: expectedMove.from, to: expectedMove.to };
-  }, [showHintFlag, expectedMove]);
-
-  const orientation: Orientation = drillColor;
+  const expectedUci = useMemo(() => selectOpeningsExpectedUci(session), [session]);
+  const hintMove = useMemo(() => selectOpeningsHintMove(session), [session]);
+  const orientation = session.orientation;
 
   const fallbackState = useMemo(() => createInitialGameState(), []);
 
-  const disabledForMoveInput = useMemo(() => {
-    if (!running) return true;
-    if (!state) return true;
-    if (state.sideToMove !== drillColor) return true;
-    return false;
-  }, [running, state, drillColor]);
-
-  const finishAttempt = useCallback(
-    async (ref: OpeningRef | null, success: boolean, message: string) => {
-      setRunning(false);
-      setShowHintFlag(false);
-      setResultMsg(message);
-
-      if (!ref) return;
-      const solveMs = Math.max(0, Date.now() - (startedAtRef.current || Date.now()));
-      const nextStats = await recordAttempt({
-        packId: ref.packId,
-        itemId: ref.item.itemId,
-        success,
-        solveMs
-      });
-      setStats((prev) => {
-        const out = prev.filter((s) => s.key !== nextStats.key);
-        out.push(nextStats);
-        out.sort((a, b) => a.key.localeCompare(b.key));
-        return out;
-      });
-    },
-    []
-  );
-
-  const finishNodeAttempt = useCallback(
-    async (node: OpeningNodeRef | null, success: boolean, message: string) => {
-      setRunning(false);
-      setShowHintFlag(false);
-      setResultMsg(message);
-
-      if (!node) return;
-      const solveMs = Math.max(0, Date.now() - (startedAtRef.current || Date.now()));
-      const nextStats = await recordOpeningNodeAttempt({
-        key: node.key,
-        packId: node.packId,
-        itemId: node.itemId,
-        plyIndex: node.plyIndex,
-        success,
-        solveMs
-      });
-
-      setNodeStats((prev) => {
-        const out = prev.filter((s) => s.key !== nextStats.key);
-        out.push(nextStats);
-        out.sort((a, b) => a.key.localeCompare(b.key));
-        return out;
-      });
-    },
-    []
-  );
+  const disabledForMoveInput = useMemo(() => selectOpeningsDisabledForMoveInput(session), [session]);
 
   const applyMoveForMode = useCallback(
     (move: Move) => {
-      if (!running || !state) return;
-
-      if (mode === 'nodes') {
-        const node = currentNode;
-        if (!node) return;
-
-        const expected = expectedUci;
-        if (!expected) {
-          void finishNodeAttempt(node, true, 'Done.');
-          return;
-        }
-
-        const expectedNorm = normalizeUci(expected);
-        const played = normalizeUci(moveToUci(move));
-
-        if (played !== expectedNorm) {
-          void finishNodeAttempt(node, false, `Incorrect. Expected ${expectedNorm}. You played ${played}.`);
-          return;
-        }
-
-        let nextState = applyMove(state, move);
-        const nextIndex = node.plyIndex + 1;
-
-        // Auto-play opponent replies for preview (until it's your turn again).
-        const auto = autoPlayOpponentReplies(nextState, node.lineUci, nextIndex, drillColor);
-        if (auto.error) {
-          setState(auto.state);
-          void finishNodeAttempt(node, false, auto.error);
-          return;
-        }
-        nextState = auto.state;
-
-        setState(nextState);
-        setIndex(nextIndex);
-        setSelectedSquare(null);
-        setShowHintFlag(false);
-
-        void finishNodeAttempt(node, true, 'Correct!');
-        return;
-      }
-
-      // line mode
-      const ref = current;
-      if (!ref) return;
-
-      const expected = expectedUci;
-      if (!expected) {
-        void finishAttempt(ref, true, 'Line complete.');
-        return;
-      }
-
-      const expectedNorm = normalizeUci(expected);
-      const played = normalizeUci(moveToUci(move));
-      if (played !== expectedNorm) {
-        void finishAttempt(ref, false, `Incorrect. Expected ${expected}. You played ${played}.`);
-        return;
-      }
-
-      let nextState = applyMove(state, move);
-      let nextIndex = index + 1;
-
-      // Auto-play opponent replies if the line expects them.
-      const auto = autoPlayOpponentReplies(nextState, ref.lineUci, nextIndex, drillColor);
-      if (auto.error) {
-        setState(auto.state);
-        setIndex(auto.nextIndex);
-        void finishAttempt(ref, false, auto.error);
-        return;
-      }
-      nextState = auto.state;
-      nextIndex = auto.nextIndex;
-
-      setState(nextState);
-      setIndex(nextIndex);
+      if (!running) return;
       setSelectedSquare(null);
-      setShowHintFlag(false);
-
-      if (nextIndex >= ref.lineUci.length) {
-        void finishAttempt(ref, true, 'Nice! Line completed.');
-      }
+      dispatch({ type: 'APPLY_MOVE', move, nowMs: Date.now() });
     },
-    [running, state, mode, currentNode, current, expectedUci, drillColor, index, finishAttempt, finishNodeAttempt]
+    [running, dispatch]
   );
 
   const moveInput = useMoveInput({
@@ -468,209 +331,143 @@ export function useOpeningsSessionController(args: UseOpeningsSessionControllerA
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPromotion, expectedUci]);
 
-  const resetToInitial = useCallback(() => {
-    setPendingPromotion(null);
+  // Effect runner for reducer effects (record attempts).
+  useEffect(() => {
+    const pending = effectsRef.current;
+    if (pending.length === 0) return;
+    effectsRef.current = [];
 
-    if (mode === 'nodes') {
-      if (!currentNode) return;
-      const fen = currentNode.fen;
-      const parsed = tryParseFEN(fen);
-      if (!parsed.ok) {
-        setResultMsg(`Invalid FEN: ${parsed.error}`);
-        setState(null);
-        setRunning(false);
-        return;
+    for (const eff of pending) {
+      switch (eff.kind) {
+        case 'RECORD_LINE_ATTEMPT': {
+          void (async () => {
+            try {
+              const nextStats = await recordAttempt({
+                packId: eff.packId,
+                itemId: eff.itemId,
+                success: eff.success,
+                solveMs: eff.solveMs
+              });
+              setStats((prev) => {
+                const out = prev.filter((s) => s.key !== nextStats.key);
+                out.push(nextStats);
+                out.sort((a, b) => a.key.localeCompare(b.key));
+                return out;
+              });
+            } catch {
+              // ignore
+            }
+          })();
+          break;
+        }
+
+        case 'RECORD_NODE_ATTEMPT': {
+          void (async () => {
+            try {
+              const nextStats = await recordOpeningNodeAttempt({
+                key: eff.key,
+                packId: eff.packId,
+                itemId: eff.itemId,
+                plyIndex: eff.plyIndex,
+                success: eff.success,
+                solveMs: eff.solveMs
+              });
+
+              setNodeStats((prev) => {
+                const out = prev.filter((s) => s.key !== nextStats.key);
+                out.push(nextStats);
+                out.sort((a, b) => a.key.localeCompare(b.key));
+                return out;
+              });
+            } catch {
+              // ignore
+            }
+          })();
+          break;
+        }
       }
-
-      setInitialFen(fen);
-      setState(parsed.value);
-      setIndex(currentNode.plyIndex);
-      setSelectedSquare(null);
-      setShowHintFlag(false);
-      setResultMsg(null);
-      setRunning(true);
-      startedAtRef.current = Date.now();
-      return;
     }
+  }, [session, dispatch]);
 
-    if (!current) return;
-    const fen = current.item.position.fen;
-    const parsed = tryParseFEN(fen);
-    if (!parsed.ok) {
-      setResultMsg(`Invalid FEN: ${parsed.error}`);
-      setState(null);
-      setRunning(false);
-      return;
-    }
-
-    setInitialFen(fen);
-    setState(parsed.value);
-    setIndex(0);
+  const resetToInitial = useCallback(() => {
+    clearNotice();
+    setPendingPromotion(null);
     setSelectedSquare(null);
-    setShowHintFlag(false);
-    setResultMsg(null);
-    setRunning(true);
-    startedAtRef.current = Date.now();
-
-    // If the line starts with opponent to move (because user drills as black, for example),
-    // auto-play until it's the user's turn.
-    const auto = autoPlayOpponentReplies(parsed.value, current.lineUci, 0, drillColor);
-    if (auto.error) {
-      setState(auto.state);
-      setIndex(auto.nextIndex);
-      setResultMsg(auto.error);
-      setRunning(false);
-      return;
-    }
-    setState(auto.state);
-    setIndex(auto.nextIndex);
-  }, [mode, currentNode, current, drillColor]);
+    dispatch({ type: 'RESET_TO_INITIAL', nowMs: Date.now() });
+  }, [clearNotice, dispatch]);
 
   const startNode = useCallback(
     (chosenNode: OpeningNodeRef) => {
+      clearNotice();
       setPendingPromotion(null);
-      setCurrentNode(chosenNode);
-      setCurrent(null);
-      setResultMsg(null);
-
-      const parsed = tryParseFEN(chosenNode.fen);
-      if (!parsed.ok) {
-        setResultMsg(`Invalid FEN: ${parsed.error}`);
-        setState(null);
-        setRunning(false);
-        return;
-      }
-
-      setInitialFen(chosenNode.fen);
-      setState(parsed.value);
-      setIndex(chosenNode.plyIndex);
       setSelectedSquare(null);
-      setShowHintFlag(false);
-      setRunning(true);
-      startedAtRef.current = Date.now();
+      dispatch({ type: 'START_NODE', node: chosenNode, nowMs: Date.now() });
     },
-    []
+    [clearNotice, dispatch]
   );
 
   const startDrill = useCallback(
     (ref?: OpeningRef | null) => {
+      clearNotice();
       setPendingPromotion(null);
+      setSelectedSquare(null);
 
       if (mode === 'nodes') {
         const ts = Date.now();
         let candidates = openingNodes;
-
         // If a line was explicitly chosen, drill nodes within that line.
         if (ref) {
           candidates = openingNodes.filter((n) => n.packId === ref.packId && n.itemId === ref.item.itemId);
         }
 
         const chosenNode = pickNextOpeningNode(candidates, nodeStats, ts, focusNodeKey ?? null);
-
         if (!chosenNode) {
-          setResultMsg('No opening nodes found (no UCI opening lines in packs).');
+          dispatch({ type: 'SET_RESULT_MSG', message: 'No opening nodes found (no UCI opening lines in packs).' });
           return;
         }
-
-        startNode(chosenNode);
+        dispatch({ type: 'START_NODE', node: chosenNode, nowMs: ts });
         return;
       }
 
       const ts = Date.now();
       const chosen = ref ?? pickNextOpening(refs, stats, ts, focusKey);
       if (!chosen) {
-        setResultMsg('No opening lines found in packs.');
+        dispatch({ type: 'SET_RESULT_MSG', message: 'No opening lines found in packs.' });
         return;
       }
 
-      setCurrent(chosen);
-      setCurrentNode(null);
-      setResultMsg(null);
-
-      // Default drill color:
-      // - If focus provided, keep existing choice.
-      // - Otherwise pick based on first move side-to-move from FEN: user drills the side to move by default.
-      const fen = chosen.item.position.fen;
-      const parsed = tryParseFEN(fen);
-      if (parsed.ok) {
-        setDrillColor(parsed.value.sideToMove);
-      }
-
-      // Reset will apply auto-play based on drillColor, but drillColor state updates are async.
-      // So compute an immediate drillColor for this start call:
-      const effectiveDrillColor: Color = parsed.ok ? parsed.value.sideToMove : drillColor;
-      const parsed2 = tryParseFEN(fen);
-      if (!parsed2.ok) {
-        setResultMsg(`Invalid FEN: ${parsed2.error}`);
-        setState(null);
-        setRunning(false);
-        return;
-      }
-
-      setInitialFen(fen);
-      let s = parsed2.value;
-      let i = 0;
-
-      startedAtRef.current = Date.now();
-      setRunning(true);
-      setShowHintFlag(false);
-      setSelectedSquare(null);
-
-      const auto = autoPlayOpponentReplies(s, chosen.lineUci, 0, effectiveDrillColor);
-      if (auto.error) {
-        setState(auto.state);
-        setIndex(auto.nextIndex);
-        setResultMsg(auto.error);
-        setRunning(false);
-        return;
-      }
-      s = auto.state;
-      i = auto.nextIndex;
-
-      setState(s);
-      setIndex(i);
-      setDrillColor(effectiveDrillColor);
+      dispatch({ type: 'START_LINE', ref: chosen, nowMs: ts });
     },
-    [mode, openingNodes, nodeStats, focusNodeKey, startNode, refs, stats, focusKey, drillColor]
+    [clearNotice, dispatch, mode, openingNodes, nodeStats, focusNodeKey, refs, stats, focusKey]
   );
 
   const stopSession = useCallback(() => {
-    setRunning(false);
-    setShowHintFlag(false);
-    setResultMsg(null);
+    clearNotice();
     setPendingPromotion(null);
-
-    if (mode === 'nodes') {
-      setCurrentNode(null);
-    } else {
-      setCurrent(null);
-    }
-  }, [mode]);
+    setSelectedSquare(null);
+    dispatch({ type: 'STOP_SESSION' });
+  }, [clearNotice, dispatch]);
 
   const backToList = useCallback(() => {
-    setRunning(false);
-    setShowHintFlag(false);
-    setResultMsg(null);
+    clearNotice();
     setPendingPromotion(null);
-
-    setCurrent(null);
-    setCurrentNode(null);
-    setState(null);
-    setIndex(0);
-    setInitialFen(null);
     setSelectedSquare(null);
-  }, []);
+    dispatch({ type: 'BACK_TO_LIST' });
+  }, [clearNotice, dispatch]);
 
-  const toggleHint = useCallback(() => setShowHintFlag((v) => !v), []);
-  const showHint = useCallback(() => setShowHintFlag(true), []);
+  const toggleHint = useCallback(() => dispatch({ type: 'TOGGLE_HINT' }), [dispatch]);
+  const showHint = useCallback(() => dispatch({ type: 'SHOW_HINT' }), [dispatch]);
+
+  const setDrillColor = useCallback((c: Color) => dispatch({ type: 'SET_DRILL_COLOR', color: c }), [dispatch]);
 
   const setMode = useCallback(
     (m: DrillMode) => {
-      setModeState(m);
-      // Switching mode should reset session to avoid mixed state.
-      backToList();
+      clearNotice();
+      setPendingPromotion(null);
+      setSelectedSquare(null);
+      dispatch({ type: 'SET_MODE', mode: m });
     },
-    [backToList]
+    [clearNotice, dispatch]
   );
 
   useGlobalHotkeys(

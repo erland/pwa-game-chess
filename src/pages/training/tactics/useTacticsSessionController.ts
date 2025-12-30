@@ -1,21 +1,34 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useGlobalHotkeys } from '../../../ui/useGlobalHotkeys';
-import type { Color, Move, Square } from '../../../domain/chessTypes';
-import { findKing, isInCheck } from '../../../domain/attack';
-import { createInitialGameState } from '../../../domain/gameState';
+import type { Move, Square } from '../../../domain/chessTypes';
 import type { Orientation } from '../../../domain/localSetup';
-import { fromFEN } from '../../../domain/notation/fen';
+import { createInitialGameState } from '../../../domain/gameState';
 
-import type { CoachAnalysis, CoachHint, CoachMoveGrade, ProgressiveHintLevel } from '../../../domain/coach/types';
-import { getProgressiveHint } from '../../../domain/coach/hints';
+import type { CoachAnalysis, CoachMoveGrade, ProgressiveHintLevel } from '../../../domain/coach/types';
 import { createStrongSearchCoach } from '../../../domain/coach/strongSearchCoach';
 
 import type { TacticItem, TrainingPack } from '../../../domain/training/schema';
 import { loadAllPacks } from '../../../domain/training/packLoader';
 import { makeItemKey, type TrainingItemKey } from '../../../domain/training/keys';
-import { getSolutionLines, normalizeUci, progressTacticLine } from '../../../domain/training/tactics';
+import { normalizeUci } from '../../../domain/training/tactics';
+
+import {
+  reduceTacticsAttempt
+} from '../../../domain/training/session/tacticsSession';
+import {
+  selectTacticsCheckSquares,
+  selectTacticsDisplayedLine,
+  selectTacticsHintMove,
+  selectTacticsProgressText
+} from '../../../domain/training/session/tacticsSession.selectors';
+import type {
+  TacticRef,
+  TacticsAttemptAction,
+  TacticsAttemptEffect,
+  TacticsAttemptState
+} from '../../../domain/training/session/tacticsSession.types';
 
 import { listItemStats, recordAttempt, type TrainingItemStats } from '../../../storage/training/trainingStore';
 import type { TrainingMistakeRecord, TrainingSessionRecord } from '../../../storage/training/trainingSessionStore';
@@ -30,43 +43,14 @@ import {
 import { useToastNotice } from '../../game/useToastNotice';
 import { useMoveInput, type PendingPromotion } from '../../../ui/chessboard/useMoveInput';
 
-export type TacticRef = {
-  pack: TrainingPack;
-  item: TacticItem;
-};
+export type { TacticRef };
+export type SessionState = TacticsAttemptState;
 
 export type SolveState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'ready'; packs: TrainingPack[]; errors: string[] }
   | { kind: 'error'; message: string };
-
-export type SessionState = {
-  ref: TacticRef;
-  attemptToken: string;
-  baseState: ReturnType<typeof fromFEN>;
-  state: ReturnType<typeof fromFEN>;
-  userColor: Color;
-  /** All solution lines (normalized UCI), from the pack item. */
-  solutionLines: string[][];
-  /** The chosen line after the first correct move (supports alternative first moves). */
-  activeLine: string[] | null;
-  /** Next expected ply index into activeLine (or solutionLines during the first move). */
-  ply: number;
-  /** Played line so far (including auto-played opponent replies). */
-  playedLineUci: string[];
-  /** Grades for each user move in this attempt (best-effort). */
-  userMoveGrades: CoachMoveGrade[];
-  startedAtMs: number;
-  result: null | { correct: boolean; playedLineUci: string[]; solveMs: number; message?: string };
-  lastMove: { from: Square; to: Square } | null;
-  // coach
-  analysis: CoachAnalysis | null;
-  grade: CoachMoveGrade | null;
-  hintLevel: 0 | ProgressiveHintLevel;
-  hint: CoachHint | null;
-  coachBusy: boolean;
-};
 
 export type RunState = {
   id: string;
@@ -179,7 +163,7 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
 
   const [solve, setSolve] = useState<SolveState>({ kind: 'idle' });
   const [stats, setStats] = useState<TrainingItemStats[]>([]);
-  const [session, setSession] = useState<SessionState | null>(null);
+
   const [run, setRun] = useState<RunState | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
@@ -190,14 +174,30 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
   const [reviewMistakes, setReviewMistakes] = useState<TrainingMistakeRecord[]>([]);
 
   const { noticeText, showNotice, clearNotice } = useToastNotice(1500);
-  const abortRef = useRef<AbortController | null>(null);
 
+  const gradeAbortRef = useRef<AbortController | null>(null);
+  const analysisAbortRef = useRef<AbortController | null>(null);
   const coach = useMemo(() => createStrongSearchCoach(), []);
   const coachConfig = useMemo(() => ({ maxDepth: 4, thinkTimeMs: 0 }), []);
 
+  const effectsRef = useRef<TacticsAttemptEffect[]>([]);
+
+  const reducer = useCallback(
+    (prev: TacticsAttemptState | null, action: TacticsAttemptAction): TacticsAttemptState | null => {
+      const res = reduceTacticsAttempt(prev, action);
+      if (res.effects.length > 0) effectsRef.current.push(...res.effects);
+      return res.state;
+    },
+    []
+  );
+
+  const [session, dispatch] = useReducer(reducer, null as TacticsAttemptState | null);
+
   const resetCoaching = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    gradeAbortRef.current?.abort();
+    gradeAbortRef.current = null;
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
   }, []);
 
   // Load training packs.
@@ -223,8 +223,10 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
   // Ensure any in-flight coach analysis is cancelled on unmount.
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
-      abortRef.current = null;
+      gradeAbortRef.current?.abort();
+      gradeAbortRef.current = null;
+      analysisAbortRef.current?.abort();
+      analysisAbortRef.current = null;
     };
   }, []);
 
@@ -314,36 +316,76 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     };
   }, [reviewSessionId, focusKey, solve]);
 
+  // Effect runner for reducer effects.
+  useEffect(() => {
+    const pending = effectsRef.current;
+    if (pending.length === 0) return;
+    effectsRef.current = [];
+
+    for (const eff of pending) {
+      switch (eff.kind) {
+        case 'RECORD_ATTEMPT': {
+          void (async () => {
+            try {
+              await recordAttempt({
+                packId: eff.packId,
+                itemId: eff.itemId,
+                success: eff.success,
+                solveMs: eff.solveMs
+              });
+            } catch {
+              // ignore
+            }
+          })();
+          break;
+        }
+
+        case 'ANALYZE': {
+          analysisAbortRef.current?.abort();
+          const ac = new AbortController();
+          analysisAbortRef.current = ac;
+
+          void (async () => {
+            try {
+              const analysis: CoachAnalysis = await coach.analyze(eff.state, eff.sideToMove, coachConfig, ac.signal);
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'ANALYSIS_RESOLVED', attemptToken: eff.attemptToken, analysis });
+            } catch {
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'ANALYSIS_FAILED', attemptToken: eff.attemptToken });
+            }
+          })();
+          break;
+        }
+
+        case 'GRADE_MOVE': {
+          gradeAbortRef.current?.abort();
+          const ac = new AbortController();
+          gradeAbortRef.current = ac;
+
+          void (async () => {
+            try {
+              const grade: CoachMoveGrade = await coach.gradeMove(eff.beforeState, eff.move, coachConfig, ac.signal);
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'GRADE_RESOLVED', attemptToken: eff.attemptToken, grade });
+            } catch {
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'GRADE_FAILED', attemptToken: eff.attemptToken });
+            }
+          })();
+          break;
+        }
+      }
+    }
+  }, [session, coach, coachConfig, dispatch]);
+
   const startSession = useCallback(
     (ref: TacticRef) => {
       resetCoaching();
       clearNotice();
-
-      const baseState = fromFEN(ref.item.position.fen);
-      const solutionLines = getSolutionLines(ref.item);
-      const attemptToken = makeSessionId();
       setSelectedSquare(null);
       setPendingPromotion(null);
-      setSession({
-        ref,
-        attemptToken,
-        baseState,
-        state: baseState,
-        userColor: baseState.sideToMove,
-        solutionLines,
-        activeLine: null,
-        ply: 0,
-        playedLineUci: [],
-        userMoveGrades: [],
-        startedAtMs: nowMs(),
-        result: null,
-        lastMove: null,
-        analysis: null,
-        grade: null,
-        hintLevel: 0,
-        hint: null,
-        coachBusy: false
-      });
+      dispatch({ type: 'START', ref, nowMs: nowMs(), attemptToken: makeSessionId() });
     },
     [clearNotice, resetCoaching]
   );
@@ -354,23 +396,7 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     clearNotice();
     setSelectedSquare(null);
     setPendingPromotion(null);
-    setSession({
-      ...session,
-      attemptToken: makeSessionId(),
-      state: session.baseState,
-      activeLine: null,
-      ply: 0,
-      playedLineUci: [],
-      userMoveGrades: [],
-      startedAtMs: nowMs(),
-      result: null,
-      lastMove: null,
-      analysis: null,
-      grade: null,
-      hintLevel: 0,
-      hint: null,
-      coachBusy: false
-    });
+    dispatch({ type: 'RETRY', nowMs: nowMs(), attemptToken: makeSessionId() });
   }, [session, clearNotice, resetCoaching]);
 
   const startNext = useCallback(() => {
@@ -417,119 +443,13 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     (move: Move) => {
       if (!session || session.result) return;
       if (session.state.sideToMove !== session.userColor) return;
+
       resetCoaching();
       clearNotice();
 
-      const beforeState = session.state;
-      const solveMs = Math.max(0, Math.round(nowMs() - session.startedAtMs));
-
-      const prog = progressTacticLine(beforeState, move, session.ref.item, {
-        userColor: session.userColor,
-        activeLine: session.activeLine,
-        playedLineUci: session.playedLineUci
-      });
-
-      if (prog.kind === 'wrong' || prog.kind === 'packIllegal') {
-        setSession({
-          ...session,
-          state: prog.state,
-          activeLine: prog.kind === 'packIllegal' ? prog.activeLine : session.activeLine,
-          ply: prog.ply,
-          playedLineUci: prog.playedLineUci,
-          result: {
-            correct: false,
-            playedLineUci: prog.playedLineUci,
-            solveMs,
-            message: prog.kind === 'packIllegal' ? prog.message : undefined
-          },
-          lastMove: prog.lastMove,
-          hint: null,
-          hintLevel: 0,
-          coachBusy: true
-        });
-
-        void (async () => {
-          try {
-            await recordAttempt({
-              packId: session.ref.pack.id,
-              itemId: session.ref.item.itemId,
-              success: false,
-              solveMs
-            });
-          } catch {
-            // ignore
-          }
-
-          const ac = new AbortController();
-          abortRef.current = ac;
-          try {
-            const grade = await coach.gradeMove(beforeState, move, coachConfig, ac.signal);
-            if (ac.signal.aborted) return;
-            setSession((prev) => (prev ? { ...prev, grade, coachBusy: false, userMoveGrades: [...prev.userMoveGrades, grade] } : prev));
-          } catch {
-            if (ac.signal.aborted) return;
-            setSession((prev) => (prev ? { ...prev, coachBusy: false } : prev));
-          }
-        })();
-        return;
-      }
-
-      const complete = prog.kind === 'complete';
-
-      setSession({
-        ...session,
-        state: prog.state,
-        activeLine: prog.activeLine,
-        ply: prog.ply,
-        playedLineUci: prog.playedLineUci,
-        result: complete ? { correct: true, playedLineUci: prog.playedLineUci, solveMs } : null,
-        lastMove: prog.lastMove,
-        hint: null,
-        hintLevel: 0,
-        coachBusy: true
-      });
-
-      void (async () => {
-        // Always grade the user's move (best-effort).
-        const ac = new AbortController();
-        abortRef.current = ac;
-        try {
-          const grade = await coach.gradeMove(beforeState, move, coachConfig, ac.signal);
-          if (ac.signal.aborted) return;
-          setSession((prev) => {
-            if (!prev) return prev;
-            const grades = [...prev.userMoveGrades, grade];
-            // Keep the "headline" grade as the worst label (highest cpLoss) if available.
-            let headline = grade;
-            if (grades.length > 1) {
-              const sortable = grades.filter((g) => Number.isFinite(g.cpLoss));
-              if (sortable.length > 0) {
-                sortable.sort((a, b) => (b.cpLoss ?? 0) - (a.cpLoss ?? 0));
-                headline = sortable[0];
-              }
-            }
-            return { ...prev, grade: headline, userMoveGrades: grades, coachBusy: false };
-          });
-        } catch {
-          if (ac.signal.aborted) return;
-          setSession((prev) => (prev ? { ...prev, coachBusy: false } : prev));
-        }
-
-        // Record attempt only when the line is complete.
-        if (!complete) return;
-        try {
-          await recordAttempt({
-            packId: session.ref.pack.id,
-            itemId: session.ref.item.itemId,
-            success: true,
-            solveMs
-          });
-        } catch {
-          // ignore
-        }
-      })();
+      dispatch({ type: 'USER_MOVE', move, nowMs: nowMs() });
     },
-    [session, resetCoaching, clearNotice, coach, coachConfig]
+    [session, resetCoaching, clearNotice]
   );
 
   // Move input is shared with the main game UI. Provide a stable fallback state
@@ -547,35 +467,12 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     illegalNoticeMode: 'pseudo'
   });
 
-  const checkSquares = useMemo(() => {
-    if (!session) return [] as Square[];
-    const stm = session.state.sideToMove;
-    if (!isInCheck(session.state, stm)) return [] as Square[];
-    const k = findKing(session.state, stm);
-    return k == null ? [] : [k];
-  }, [session]);
-
-  const hintMove = useMemo(() => {
-    if (!session?.hint) return null;
-    if (session.hint.kind === 'nudge' || session.hint.kind === 'move') {
-      if (session.hint.from != null && session.hint.to != null) return { from: session.hint.from, to: session.hint.to };
-    }
-    return null;
-  }, [session?.hint]);
+  const checkSquares = useMemo(() => selectTacticsCheckSquares(session), [session]);
+  const hintMove = useMemo(() => selectTacticsHintMove(session), [session]);
+  const displayedLine = useMemo(() => selectTacticsDisplayedLine(session), [session]);
+  const progressText = useMemo(() => selectTacticsProgressText(session), [session]);
 
   const orientation: Orientation = session?.baseState.sideToMove ?? 'w';
-  const displayedLine = useMemo(() => {
-    if (!session) return null;
-    // Before the first correct move we might have multiple alternatives; show the first.
-    return session.activeLine ?? session.solutionLines[0] ?? null;
-  }, [session]);
-
-  const progressText = useMemo(() => {
-    if (!session || !displayedLine) return null;
-    const totalUserMoves = Math.ceil(displayedLine.length / 2);
-    const nextUserMoveIndex = Math.floor(session.ply / 2) + 1;
-    return `Move ${Math.min(totalUserMoves, nextUserMoveIndex)} / ${totalUserMoves}`;
-  }, [session, displayedLine]);
 
   // When a puzzle ends, update the current run summary (only in normal mode).
   useEffect(() => {
@@ -639,37 +536,16 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
     });
   }, [session?.result, session?.attemptToken, reviewSessionId, run]);
 
-  const ensureAnalysis = useCallback(async (): Promise<CoachAnalysis | null> => {
-    if (!session) return null;
-    if (session.analysis) return session.analysis;
-
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setSession((prev) => (prev ? { ...prev, coachBusy: true } : prev));
-    try {
-      const analysis = await coach.analyze(session.state, session.state.sideToMove, coachConfig, ac.signal);
-      if (ac.signal.aborted) return null;
-      setSession((prev) => (prev ? { ...prev, analysis, coachBusy: false } : prev));
-      return analysis;
-    } catch {
-      if (ac.signal.aborted) return null;
-      setSession((prev) => (prev ? { ...prev, coachBusy: false } : prev));
-      return null;
-    }
-  }, [session, coach, coachConfig]);
-
   const showHint = useCallback(
     async (nextLevel: ProgressiveHintLevel) => {
-      const analysis = await ensureAnalysis();
-      if (!analysis) return;
-      const hint = getProgressiveHint(analysis, nextLevel);
-      setSession((prev) => (prev ? { ...prev, hintLevel: nextLevel, hint } : prev));
+      if (!session) return;
+      dispatch({ type: 'REQUEST_HINT', level: nextLevel });
     },
-    [ensureAnalysis]
+    [session, dispatch]
   );
 
   const clearHint = useCallback(() => {
-    setSession((prev) => (prev ? { ...prev, hint: null, hintLevel: 0 } : prev));
+    dispatch({ type: 'CLEAR_HINT' });
   }, []);
 
   const endRun = useCallback(async () => {
@@ -700,41 +576,32 @@ export function useTacticsSessionController({ reviewSessionId, focusKey }: UseTa
         await addTrainingMistake(m);
       }
       setRun(null);
-      setSession(null);
-      setSelectedSquare(null);
-      setPendingPromotion(null);
-      navigate(`/training/session/${encodeURIComponent(record.id)}`);
     } catch {
       showNotice('Failed to save session');
+      return;
     }
-  }, [run, navigate, showNotice]);
+
+    // Clean state after successful save.
+    setSelectedSquare(null);
+    setPendingPromotion(null);
+    resetCoaching();
+    dispatch({ type: 'CLEAR_SESSION' });
+    navigate(`/training/session/${encodeURIComponent(record.id)}`);
+  }, [run, navigate, showNotice, resetCoaching, dispatch]);
 
   const giveUpShowLine = useCallback(async () => {
     if (!session || session.result) return;
-    const solveMs = Math.max(0, Math.round(nowMs() - session.startedAtMs));
-    const line = displayedLine ?? [];
-    setSession({
-      ...session,
-      result: {
-        correct: false,
-        playedLineUci: session.playedLineUci,
-        solveMs,
-        message: line.length > 0 ? `Solution line: ${line.join(' ')}` : 'No solution line available.'
-      }
-    });
-    try {
-      await recordAttempt({
-        packId: session.ref.pack.id,
-        itemId: session.ref.item.itemId,
-        success: false,
-        solveMs
-      });
-    } catch {
-      // ignore
-    }
-  }, [session, displayedLine]);
+    resetCoaching();
+    dispatch({ type: 'GIVE_UP', nowMs: nowMs(), displayedLine: displayedLine ?? [] });
+  }, [session, displayedLine, resetCoaching]);
 
-  const startLabel = reviewSessionId ? (reviewIndex === 0 ? 'Start review' : 'Next mistake') : run && run.attempted > 0 ? 'Next tactic' : 'Start tactic';
+  const startLabel = reviewSessionId
+    ? reviewIndex === 0
+      ? 'Start review'
+      : 'Next mistake'
+    : run && run.attempted > 0
+      ? 'Next tactic'
+      : 'Start tactic';
 
   const startDisabled = reviewSessionId ? !reviewQueue || reviewIndex >= reviewQueue.length : tacticRefs.length === 0;
 

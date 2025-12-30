@@ -1,29 +1,36 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useGlobalHotkeys } from '../../../ui/useGlobalHotkeys';
 
 import type { Color, GameState, Move, Square } from '../../../domain/chessTypes';
-import { applyMove } from '../../../domain/applyMove';
-import { generateLegalMoves } from '../../../domain/legalMoves';
-import { findKing, isInCheck } from '../../../domain/attack';
-import { tryParseFEN } from '../../../domain/notation/fen';
-import { moveToUci } from '../../../domain/notation/uci';
-import { getGameStatus } from '../../../domain/gameStatus';
-import { cloneGameState } from '../../../domain/cloneGameState';
 import { createInitialGameState } from '../../../domain/gameState';
+import { tryParseFEN } from '../../../domain/notation/fen';
 
 import { createStrongSearchCoach } from '../../../domain/coach/strongSearchCoach';
-import { getProgressiveHint } from '../../../domain/coach/hints';
-import type { Coach, CoachAnalysis, CoachHint, CoachMoveGrade, ProgressiveHintLevel } from '../../../domain/coach/types';
+import type { Coach, CoachAnalysis, CoachMoveGrade, ProgressiveHintLevel } from '../../../domain/coach/types';
 
 import type { TrainingItemKey } from '../../../domain/training/keys';
 import { makeItemKey, splitItemKey } from '../../../domain/training/keys';
 import type { EndgameItem, TrainingPack } from '../../../domain/training/schema';
 import { loadAllPacks } from '../../../domain/training/packLoader';
-import { parseEndgameGoal, checkEndgameGoal } from '../../../domain/training/endgameGoals';
-import type { EndgameCheckpoint, EndgameMoveFeedback } from '../../../domain/training/endgameDrift';
-import { computeEndgameMoveFeedback, suggestAutoCheckpoint } from '../../../domain/training/endgameDrift';
+
+import {
+  createEndgamesSessionState,
+  reduceEndgamesSession
+} from '../../../domain/training/session/endgamesSession';
+import {
+  selectEndgamesCheckSquares,
+  selectEndgamesHintMove,
+  selectEndgamesOrientation
+} from '../../../domain/training/session/endgamesSession.selectors';
+import type {
+  EndgameRef,
+  EndgameResult,
+  EndgamesSessionEffect,
+  EndgamesSessionAction,
+  EndgamesSessionState
+} from '../../../domain/training/session/endgamesSession.types';
 
 import type { TrainingItemStats } from '../../../storage/training/trainingStore';
 import { listItemStats, recordAttempt } from '../../../storage/training/trainingStore';
@@ -39,49 +46,12 @@ export type SolveState =
   | { kind: 'ready'; packs: TrainingPack[] }
   | { kind: 'error'; message: string };
 
-export type EndgameRef = {
-  key: TrainingItemKey;
-  packId: string;
-  itemId: string;
-  difficulty: number;
-  fen: string;
-  goalText?: string;
-  themes: string[];
-};
+export type { EndgameRef, EndgameResult };
 
-export type EndgameResult = {
-  success: boolean;
-  message: string;
-  statusKind: string;
-  finishedAtMs: number;
-  solveMs: number;
-  sessionId?: string;
-};
-
-export type EndgameSession = {
+export type EndgameSession = EndgamesSessionState & {
   ref: EndgameRef;
   baseState: GameState;
   state: GameState;
-  playerColor: Color;
-  startedAtMs: number;
-  playedLineUci: string[];
-  lastMove: Move | null;
-  lastMoveColor: Color | null;
-
-  analysis: CoachAnalysis | null;
-  hint: CoachHint | null;
-
-  // Per-move grading and drift warnings
-  lastGrade: CoachMoveGrade | null;
-  feedback: EndgameMoveFeedback | null;
-  totalCpLoss: number;
-  gradedMoves: number;
-  gradeCounts: Record<string, number>;
-
-  // "Try again from key position" checkpoint
-  checkpoint: EndgameCheckpoint | null;
-
-  result: EndgameResult | null;
 };
 
 export type UseEndgamesSessionControllerArgs = {
@@ -186,16 +156,30 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
   const [solve, setSolve] = useState<SolveState>({ kind: 'idle' });
   const [packs, setPacks] = useState<TrainingPack[]>([]);
   const [stats, setStats] = useState<TrainingItemStats[]>([]);
-  const [session, setSession] = useState<EndgameSession | null>(null);
+
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
 
   const coachRef = useRef<Coach | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const gradeAbortRef = useRef<AbortController | null>(null);
+  const opponentAbortRef = useRef<AbortController | null>(null);
+  const hintAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     coachRef.current = coachRef.current ?? createStrongSearchCoach();
   }, []);
+
+  const effectsRef = useRef<EndgamesSessionEffect[]>([]);
+  const reducer = useCallback(
+    (prev: EndgamesSessionState, action: EndgamesSessionAction): EndgamesSessionState => {
+      const res = reduceEndgamesSession(prev, action);
+      if (res.effects.length > 0) effectsRef.current.push(...res.effects);
+      return res.state;
+    },
+    []
+  );
+
+  const [sessionState, dispatch] = useReducer(reducer, createEndgamesSessionState());
 
   useEffect(() => {
     let mounted = true;
@@ -244,82 +228,216 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
     return m;
   }, [stats]);
 
-  const orientation = session?.playerColor ?? 'w';
+  const session: EndgameSession | null =
+    sessionState.ref && sessionState.state && sessionState.baseState ? (sessionState as unknown as EndgameSession) : null;
 
-  const checkSquares = useMemo(() => {
-    if (!session) return [] as Square[];
-    const stm = session.state.sideToMove;
-    if (!isInCheck(session.state, stm)) return [] as Square[];
-    const k = findKing(session.state, stm);
-    return k == null ? [] : [k];
-  }, [session]);
-
-  const hintMove = useMemo(() => {
-    if (!session?.hint) return null;
-    if (session.hint.kind === 'nudge' || session.hint.kind === 'move') {
-      if (session.hint.from != null && session.hint.to != null) return { from: session.hint.from, to: session.hint.to };
-    }
-    return null;
-  }, [session?.hint]);
+  const orientation = selectEndgamesOrientation(sessionState);
+  const checkSquares = selectEndgamesCheckSquares(sessionState);
+  const hintMove = selectEndgamesHintMove(sessionState);
 
   const clearCoaching = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    if (!session) return;
-    setSession({ ...session, analysis: null, hint: null });
-  }, [session]);
+    hintAbortRef.current?.abort();
+    hintAbortRef.current = null;
+    dispatch({ type: 'CLEAR_COACHING' });
+  }, []);
 
   const dismissFeedback = useCallback(() => {
-    if (!session) return;
-    if (!session.feedback) return;
-    setSession({ ...session, feedback: null });
-  }, [session]);
+    dispatch({ type: 'DISMISS_FEEDBACK' });
+  }, []);
 
   const setCheckpointNow = useCallback(
     (label = 'Checkpoint') => {
-      if (!session) return;
-      if (session.result) return;
-      const ts = nowMs();
-      const cp: EndgameCheckpoint = {
-        label,
-        state: cloneGameState(session.state),
-        ply: session.playedLineUci.length,
-        setAtMs: ts,
-        scoreCp: session.lastGrade?.playedScoreCp
-      };
-      setSession({ ...session, checkpoint: cp });
+      dispatch({ type: 'SET_CHECKPOINT_NOW', label, nowMs: nowMs() });
     },
-    [session]
+    []
   );
 
   const retryFromCheckpoint = useCallback(() => {
-    if (!session) return;
-    const cp = session.checkpoint;
-    if (!cp) return;
-
     setSelectedSquare(null);
     setPendingPromotion(null);
-    abortRef.current?.abort();
-    abortRef.current = null;
 
-    const ts = nowMs();
-    setSession({
-      ...session,
-      state: cloneGameState(cp.state),
-      startedAtMs: ts,
-      playedLineUci: session.playedLineUci.slice(0, Math.min(session.playedLineUci.length, cp.ply)),
-      lastMove: null,
-      lastMoveColor: null,
-      analysis: null,
-      hint: null,
-      lastGrade: null,
-      feedback: null,
-      totalCpLoss: 0,
-      gradedMoves: 0,
-      gradeCounts: {},
-      result: null
-    });
-  }, [session]);
+    gradeAbortRef.current?.abort();
+    opponentAbortRef.current?.abort();
+    hintAbortRef.current?.abort();
+
+    gradeAbortRef.current = null;
+    opponentAbortRef.current = null;
+    hintAbortRef.current = null;
+
+    dispatch({ type: 'RETRY_FROM_CHECKPOINT', nowMs: nowMs() });
+  }, []);
+
+  // Effect runner for reducer effects.
+  useEffect(() => {
+    const pending = effectsRef.current;
+    if (pending.length === 0) return;
+    effectsRef.current = [];
+
+    for (const eff of pending) {
+      switch (eff.kind) {
+        case 'GRADE_MOVE': {
+          gradeAbortRef.current?.abort();
+          const ac = new AbortController();
+          gradeAbortRef.current = ac;
+
+          void (async () => {
+            try {
+              const coach = coachRef.current;
+              if (!coach) return;
+              const grade: CoachMoveGrade = await coach.gradeMove(
+                eff.beforeState,
+                eff.move,
+                { maxDepth: 3, thinkTimeMs: 0 },
+                ac.signal
+              );
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'GRADE_RESOLVED', requestId: eff.requestId, grade, nowMs: nowMs() });
+            } catch {
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'GRADE_RESOLVED', requestId: eff.requestId, grade: null, nowMs: nowMs() });
+            }
+          })();
+          break;
+        }
+
+        case 'ANALYZE_OPPONENT': {
+          opponentAbortRef.current?.abort();
+          const ac = new AbortController();
+          opponentAbortRef.current = ac;
+
+          void (async () => {
+            try {
+              const coach = coachRef.current;
+              if (!coach) return;
+              const analysis: CoachAnalysis = await coach.analyze(
+                eff.state,
+                eff.sideToMove,
+                { maxDepth: 3, thinkTimeMs: 0 },
+                ac.signal
+              );
+              if (ac.signal.aborted) return;
+              const bestUci = analysis.bestMoveUci ?? (analysis.pv && analysis.pv[0]) ?? null;
+              dispatch({
+                type: 'OPPONENT_MOVE_RESOLVED',
+                requestId: eff.requestId,
+                bestMoveUci: bestUci,
+                nowMs: nowMs()
+              });
+            } catch {
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'OPPONENT_MOVE_RESOLVED', requestId: eff.requestId, bestMoveUci: null, nowMs: nowMs() });
+            }
+          })();
+          break;
+        }
+
+        case 'ANALYZE_HINT': {
+          hintAbortRef.current?.abort();
+          const ac = new AbortController();
+          hintAbortRef.current = ac;
+
+          void (async () => {
+            try {
+              const coach = coachRef.current;
+              if (!coach) return;
+              const analysis: CoachAnalysis = await coach.analyze(
+                eff.state,
+                eff.playerColor,
+                { maxDepth: 4, thinkTimeMs: 60 },
+                ac.signal
+              );
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'HINT_ANALYSIS_RESOLVED', requestId: eff.requestId, analysis });
+            } catch {
+              if (ac.signal.aborted) return;
+              dispatch({ type: 'HINT_ANALYSIS_RESOLVED', requestId: eff.requestId, analysis: null });
+            }
+          })();
+          break;
+        }
+
+        case 'PERSIST_FINISH': {
+          // Stop any in-flight coaching; we have a terminal state.
+          gradeAbortRef.current?.abort();
+          opponentAbortRef.current?.abort();
+          hintAbortRef.current?.abort();
+
+          gradeAbortRef.current = null;
+          opponentAbortRef.current = null;
+          hintAbortRef.current = null;
+
+          void (async () => {
+            try {
+              await recordAttempt({
+                packId: eff.packId,
+                itemId: eff.itemId,
+                success: eff.success,
+                solveMs: eff.solveMs,
+                nowMs: eff.endedAtMs
+              });
+            } catch {
+              // ignore
+            }
+
+            const sessionId = makeSessionId();
+            const avgCpLoss = eff.gradedMoves > 0 ? Math.round(eff.totalCpLoss / eff.gradedMoves) : 0;
+
+            const rec: TrainingSessionRecord = {
+              id: sessionId,
+              mode: 'endgames',
+              startedAtMs: eff.startedAtMs,
+              endedAtMs: eff.endedAtMs,
+              attempted: 1,
+              correct: eff.success ? 1 : 0,
+              totalSolveMs: eff.solveMs,
+              avgSolveMs: eff.solveMs,
+              totalCpLoss: eff.totalCpLoss,
+              avgCpLoss,
+              gradeCounts: eff.gradeCounts,
+              packIds: [eff.packId]
+            };
+
+            try {
+              await saveTrainingSession(rec);
+            } catch {
+              // ignore
+            }
+
+            if (!eff.success) {
+              const mistake: TrainingMistakeRecord = {
+                id: makeMistakeId(sessionId, eff.key, eff.endedAtMs),
+                sessionId,
+                itemKey: eff.key,
+                packId: eff.packId,
+                itemId: eff.itemId,
+                fen: eff.fen,
+                expectedLineUci: [],
+                playedLineUci: eff.playedLineUci,
+                solveMs: eff.solveMs,
+                createdAtMs: eff.endedAtMs,
+                message: eff.message
+              };
+
+              try {
+                await addTrainingMistake(mistake);
+              } catch {
+                // ignore
+              }
+            }
+
+            dispatch({ type: 'SET_SESSION_ID', sessionId });
+
+            try {
+              setStats(await listItemStats());
+            } catch {
+              // ignore
+            }
+          })();
+          break;
+        }
+      }
+    }
+  }, [sessionState, dispatch]);
 
   const startEndgame = useCallback(
     async (ref?: EndgameRef | null) => {
@@ -335,203 +453,18 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
 
       setSelectedSquare(null);
       setPendingPromotion(null);
-      abortRef.current?.abort();
-      abortRef.current = null;
 
-      const base = parsed.value;
-      const playerColor = base.sideToMove;
-      const goal = parseEndgameGoal(chosen.goalText);
+      gradeAbortRef.current?.abort();
+      opponentAbortRef.current?.abort();
+      hintAbortRef.current?.abort();
 
-      const s: EndgameSession = {
-        ref: chosen,
-        baseState: cloneGameState(base),
-        state: cloneGameState(base),
-        playerColor,
-        startedAtMs: ts,
-        playedLineUci: [],
-        lastMove: null,
-        lastMoveColor: null,
-        analysis: null,
-        hint: null,
-        lastGrade: null,
-        feedback: null,
-        totalCpLoss: 0,
-        gradedMoves: 0,
-        gradeCounts: {},
-        checkpoint: null,
-        result: null
-      };
+      gradeAbortRef.current = null;
+      opponentAbortRef.current = null;
+      hintAbortRef.current = null;
 
-      // Handle "already terminal" start positions.
-      const check0 = checkEndgameGoal(base, playerColor, goal, null, null);
-      if (check0.done) {
-        s.result = {
-          success: check0.success,
-          message: check0.message,
-          statusKind: check0.status.kind,
-          finishedAtMs: ts,
-          solveMs: 0
-        };
-      }
-
-      setSession(s);
+      dispatch({ type: 'START', ref: chosen, baseState: parsed.value, nowMs: ts });
     },
     [endgameRefs, focus, stats]
-  );
-
-  const applyAndAdvance = useCallback(
-    async (move: Move) => {
-      if (!session) return;
-      setSelectedSquare(null);
-      setPendingPromotion(null);
-      clearCoaching();
-
-      const goal = parseEndgameGoal(session.ref.goalText);
-      const moverColor = session.state.sideToMove;
-
-      // evaluate player's move quality + drift (best-effort)
-      let lastGrade: CoachMoveGrade | null = null;
-      let feedback: EndgameMoveFeedback | null = null;
-      let totalCpLoss = session.totalCpLoss;
-      let gradedMoves = session.gradedMoves;
-      const gradeCounts: Record<string, number> = { ...session.gradeCounts };
-
-      if (moverColor === session.playerColor && coachRef.current) {
-        try {
-          const ctrl = new AbortController();
-          lastGrade = await coachRef.current.gradeMove(session.state, move, { maxDepth: 3, thinkTimeMs: 0 }, ctrl.signal);
-          feedback = computeEndgameMoveFeedback(goal, lastGrade);
-          totalCpLoss += Math.max(0, Math.round(lastGrade.cpLoss ?? 0));
-          gradedMoves += 1;
-          gradeCounts[lastGrade.label] = (gradeCounts[lastGrade.label] ?? 0) + 1;
-        } catch {
-          // best-effort
-        }
-      }
-
-      let next = applyMove(session.state, move);
-
-      const played = session.playedLineUci.concat([moveToUci(move)]);
-      let lastMove = move;
-      let lastMoveColor: Color = moverColor;
-
-      // If it's now opponent's turn, let opponent play until it's player's turn again or game ends.
-      while (getGameStatus(next).kind === 'inProgress' && next.sideToMove !== session.playerColor) {
-        const coach = coachRef.current;
-        if (!coach) break;
-
-        const ctrl = new AbortController();
-        const candColor = next.sideToMove;
-        const analysis = await coach.analyze(next, candColor, { maxDepth: 3, thinkTimeMs: 0 }, ctrl.signal);
-        const bestUci = analysis.bestMoveUci ?? (analysis.pv && analysis.pv[0]) ?? null;
-        if (!bestUci) break;
-
-        const legal = generateLegalMoves(next);
-        const cand = legal.find((m) => moveToUci(m) === bestUci);
-        if (!cand) break;
-
-        next = applyMove(next, cand);
-        played.push(bestUci);
-        lastMove = cand;
-        lastMoveColor = candColor;
-      }
-
-      const check = checkEndgameGoal(next, session.playerColor, goal, lastMove, lastMoveColor);
-
-      // automatic "key position" checkpoint
-      let checkpoint = session.checkpoint;
-      if (lastGrade && getGameStatus(next).kind === 'inProgress' && next.sideToMove === session.playerColor) {
-        const prevAutoScore = checkpoint && checkpoint.label.startsWith('Key position') ? checkpoint.scoreCp : undefined;
-        const suggestion = suggestAutoCheckpoint(goal, lastGrade.playedScoreCp, lastGrade.label, prevAutoScore);
-        const canAutoUpdate = !checkpoint || checkpoint.label.startsWith('Key position');
-        if (suggestion && canAutoUpdate) {
-          checkpoint = {
-            label: suggestion.label,
-            state: cloneGameState(next),
-            ply: played.length,
-            setAtMs: nowMs(),
-            scoreCp: suggestion.scoreCp
-          };
-        }
-      }
-
-      const updated: EndgameSession = {
-        ...session,
-        state: next,
-        playedLineUci: played,
-        lastMove,
-        lastMoveColor,
-        lastGrade,
-        feedback,
-        totalCpLoss,
-        gradedMoves,
-        gradeCounts,
-        checkpoint
-      };
-
-      if (check.done) {
-        const ts = nowMs();
-        const solveMs = Math.max(0, ts - session.startedAtMs);
-
-        await recordAttempt({
-          packId: session.ref.packId,
-          itemId: session.ref.itemId,
-          success: check.success,
-          solveMs,
-          nowMs: ts
-        });
-
-        const sessionId = makeSessionId();
-        const avgCpLoss = gradedMoves > 0 ? Math.round(totalCpLoss / gradedMoves) : 0;
-        const rec: TrainingSessionRecord = {
-          id: sessionId,
-          mode: 'endgames',
-          startedAtMs: session.startedAtMs,
-          endedAtMs: ts,
-          attempted: 1,
-          correct: check.success ? 1 : 0,
-          totalSolveMs: solveMs,
-          avgSolveMs: solveMs,
-          totalCpLoss,
-          avgCpLoss,
-          gradeCounts,
-          packIds: [session.ref.packId]
-        };
-        await saveTrainingSession(rec);
-
-        if (!check.success) {
-          const mistake: TrainingMistakeRecord = {
-            id: makeMistakeId(sessionId, session.ref.key, ts),
-            sessionId,
-            itemKey: session.ref.key,
-            packId: session.ref.packId,
-            itemId: session.ref.itemId,
-            fen: session.ref.fen,
-            expectedLineUci: [],
-            playedLineUci: played,
-            solveMs,
-            createdAtMs: ts,
-            message: check.message
-          };
-          await addTrainingMistake(mistake);
-        }
-
-        updated.result = {
-          success: check.success,
-          message: check.message,
-          statusKind: check.status.kind,
-          finishedAtMs: ts,
-          solveMs,
-          sessionId
-        };
-
-        setStats(await listItemStats());
-      }
-
-      setSelectedSquare(null);
-      setSession(updated);
-    },
-    [clearCoaching, session]
   );
 
   const fallbackState = useMemo(() => createInitialGameState(), []);
@@ -543,7 +476,11 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
     pendingPromotion,
     setPendingPromotion,
     disabled: !session || Boolean(session.result),
-    onMove: (move) => void applyAndAdvance(move),
+    onMove: (move: Move) => {
+      setSelectedSquare(null);
+      setPendingPromotion(null);
+      dispatch({ type: 'USER_MOVE', move, nowMs: nowMs() });
+    },
     illegalNoticeMode: 'none'
   });
 
@@ -551,20 +488,7 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
     async (level: ProgressiveHintLevel) => {
       if (!session) return;
       if (session.result) return;
-      if (!coachRef.current) return;
-
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
-
-      try {
-        const analysis = await coachRef.current.analyze(session.state, session.playerColor, { maxDepth: 4, thinkTimeMs: 60 }, ctrl.signal);
-        const hint = getProgressiveHint(analysis, level);
-        setSession({ ...session, analysis, hint });
-      } catch (e: any) {
-        if (String(e?.name ?? '') === 'AbortError') return;
-        setSolve({ kind: 'error', message: String(e?.message ?? e) });
-      }
+      dispatch({ type: 'REQUEST_HINT', level, nowMs: nowMs() });
     },
     [session]
   );
@@ -572,65 +496,22 @@ export function useEndgamesSessionController({ focusKey }: UseEndgamesSessionCon
   const giveUp = useCallback(async () => {
     if (!session) return;
     if (session.result) return;
-
-    const ts = nowMs();
-    const solveMs = Math.max(0, ts - session.startedAtMs);
-
-    await recordAttempt({
-      packId: session.ref.packId,
-      itemId: session.ref.itemId,
-      success: false,
-      solveMs,
-      nowMs: ts
-    });
-
-    const sessionId = makeSessionId();
-    const avgCpLoss = session.gradedMoves > 0 ? Math.round(session.totalCpLoss / session.gradedMoves) : 0;
-    const rec: TrainingSessionRecord = {
-      id: sessionId,
-      mode: 'endgames',
-      startedAtMs: session.startedAtMs,
-      endedAtMs: ts,
-      attempted: 1,
-      correct: 0,
-      totalSolveMs: solveMs,
-      avgSolveMs: solveMs,
-      totalCpLoss: session.totalCpLoss,
-      avgCpLoss,
-      gradeCounts: session.gradeCounts,
-      packIds: [session.ref.packId]
-    };
-    await saveTrainingSession(rec);
-
-    const mistake: TrainingMistakeRecord = {
-      id: makeMistakeId(sessionId, session.ref.key, ts),
-      sessionId,
-      itemKey: session.ref.key,
-      packId: session.ref.packId,
-      itemId: session.ref.itemId,
-      fen: session.ref.fen,
-      expectedLineUci: [],
-      playedLineUci: session.playedLineUci,
-      solveMs,
-      createdAtMs: ts,
-      message: 'Gave up.'
-    };
-    await addTrainingMistake(mistake);
-
-    setSession({
-      ...session,
-      result: { success: false, message: 'Gave up.', statusKind: getGameStatus(session.state).kind, finishedAtMs: ts, solveMs, sessionId }
-    });
-
-    setStats(await listItemStats());
+    dispatch({ type: 'GIVE_UP', nowMs: nowMs() });
   }, [session]);
 
   const backToList = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    gradeAbortRef.current?.abort();
+    opponentAbortRef.current?.abort();
+    hintAbortRef.current?.abort();
+
+    gradeAbortRef.current = null;
+    opponentAbortRef.current = null;
+    hintAbortRef.current = null;
+
     setSelectedSquare(null);
     setPendingPromotion(null);
-    setSession(null);
+
+    dispatch({ type: 'BACK_TO_LIST' });
   }, []);
 
   const goToSessionSummary = useCallback(
